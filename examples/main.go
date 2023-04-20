@@ -23,8 +23,6 @@ var (
 func main() {
 	flag.Parse()
 
-	fmt.Printf("Used port %d", int(*nodePort))
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
@@ -33,7 +31,7 @@ func main() {
 		panic(err)
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmcPeGLQ9frxksWsyry1BoQW82SEnrNoo7Dsr8aMEyXEMe")
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmPrQE6Xo1eJrtwHSJAR5nn7ddbxJbZZLDsJW272s6ragq")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
 	if err != nil {
 		panic(err)
