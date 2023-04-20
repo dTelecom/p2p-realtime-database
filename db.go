@@ -316,8 +316,6 @@ func (d *DB) refreshPeers(ctx context.Context) {
 					continue
 				}
 
-				log.Info().Msgf("got net event from peer %s", msg.ReceivedFrom)
-
 				d.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
 			}
 		}
