@@ -35,18 +35,18 @@ func main() {
 	h.ConnManager().TagPeer(inf.ID, "keep", 100)
 
 	db, err := p2p_database.Connect(ctx, h, []peer.AddrInfo{*inf}, "chat")
-	//err = db.Set(ctx, "key", "value")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//err = db.Set(ctx, "foo", "bar")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//err = db.Set(ctx, "foo2", "bar2")
-	//if err != nil {
-	//	panic(err)
-	//}
+	err = db.Set(ctx, "key", "value")
+	if err != nil {
+		panic(err)
+	}
+	err = db.Set(ctx, "foo", "bar")
+	if err != nil {
+		panic(err)
+	}
+	err = db.Set(ctx, "foo2", "bar2")
+	if err != nil {
+		panic(err)
+	}
 
 	v, err := db.Get(ctx, "key")
 	if err != nil {
