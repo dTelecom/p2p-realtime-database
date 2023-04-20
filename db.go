@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	logging "github.com/ipfs/go-log"
 	"sync"
 	"time"
+
+	logging "github.com/ipfs/go-log"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/ipfs/go-datastore"
@@ -24,7 +25,7 @@ import (
 
 const (
 	DefaultDatabaseEventsBufferSize = 128
-	RebroadcastingInterval          = 5 * time.Second
+	RebroadcastingInterval          = 1 * time.Second
 )
 
 var (
@@ -137,8 +138,6 @@ func (d *DB) Set(ctx context.Context, key, value string) error {
 	if err != nil {
 		return errors.Wrap(err, "crdt put")
 	}
-	d.crdt.Sync(ctx, datastore.NewKey("/"))
-	d.crdt.Sync(ctx, datastore.NewKey(key))
 
 	return nil
 }
@@ -148,8 +147,6 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 		return "", ErrEmptyKey
 	}
 
-	d.crdt.Sync(ctx, datastore.NewKey("/"))
-	d.crdt.Sync(ctx, datastore.NewKey(key))
 	val, err := d.crdt.Get(ctx, datastore.NewKey(key))
 	if err != nil {
 		return "", errors.Wrap(err, "crdt get")
