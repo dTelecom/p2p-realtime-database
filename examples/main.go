@@ -24,7 +24,7 @@ func main() {
 		panic(err)
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmeaDuf7zJaaUzBKRiDDFG86aLZv7XrwBJy3Uc3hdY5h5j")
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmUSgpVeD1PRXRzzTYaAH8TwogTXasQYQq5e17SHbDztqJ")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
 	if err != nil {
 		panic(err)
