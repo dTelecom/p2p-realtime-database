@@ -20,7 +20,18 @@ func main() {
 		panic(err)
 	}
 
-	db, err := p2p_database.Connect(ctx, h, ipfslite.DefaultBootstrapPeers(), "chat")
+	//bstr, _ := multiaddr.NewMultiaddr("/ip4/65.21.98.65/tcp/3500")
+	//inf, err := peer.AddrInfoFromP2pAddr(bstr)
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	fmt.Printf("Host id is %s\n", h.ID().String())
+
+	bootstrapPeers := ipfslite.DefaultBootstrapPeers()
+	//bootstrapPeers = append(bootstrapPeers, *inf)
+
+	db, err := p2p_database.Connect(ctx, h, bootstrapPeers, "chat")
 	err = db.Set(ctx, "key", "value")
 	if err != nil {
 		panic(err)
