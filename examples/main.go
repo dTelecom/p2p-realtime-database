@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -15,17 +16,30 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
+var (
+	nodePort = flag.Uint("p", 3500, "node port")
+)
+
 func main() {
+	flag.Parse()
+
+	fmt.Printf("Used port %d", int(*nodePort))
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	h, err := p2p_database.MakeHost(3500, false)
+	h, err := p2p_database.MakeHost(int(*nodePort), false)
 	if err != nil {
 		panic(err)
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmUSgpVeD1PRXRzzTYaAH8TwogTXasQYQq5e17SHbDztqJ")
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/Qmb2L34RkrDsHyAEk5HNkXhd9v9HjwFtWBiXZEcDTNxyLU")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
+	if err != nil {
+		panic(err)
+	}
+
+	err = h.Connect(ctx, *inf)
 	if err != nil {
 		panic(err)
 	}

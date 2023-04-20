@@ -26,6 +26,9 @@ import (
 const (
 	DefaultDatabaseEventsBufferSize = 128
 	RebroadcastingInterval          = 1 * time.Second
+
+	NetSubscriptionTopicPrefix  = "crdt_net_"
+	NetSubscriptionPublishValue = "ping"
 )
 
 var (
@@ -54,6 +57,9 @@ type DB struct {
 	topicSubscriptions map[string]*TopicSubscription
 	handleGroup        *errgroup.Group
 	lock               sync.RWMutex
+
+	netTopic        *pubsub.Topic
+	netSubscription *pubsub.Subscription
 }
 
 func Connect(
@@ -113,6 +119,16 @@ func Connect(
 		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
+	netTopic, err := ps.Join(NetSubscriptionTopicPrefix + name)
+	if err != nil {
+		return nil, errors.Wrap(err, "create net topic")
+	}
+
+	netSubscription, err := netTopic.Subscribe()
+	if err != nil {
+		return nil, errors.Wrap(err, "subscribe to net topic")
+	}
+
 	db := &DB{
 		Name:   name,
 		host:   h,
@@ -124,7 +140,12 @@ func Connect(
 		topicSubscriptions: map[string]*TopicSubscription{},
 		handleGroup:        grp,
 		lock:               sync.RWMutex{},
+
+		netTopic:        netTopic,
+		netSubscription: netSubscription,
 	}
+
+	db.refreshPeers(ctx)
 
 	return db, nil
 }
@@ -281,4 +302,43 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 			topicSub.handler(event)
 		}
 	}
+}
+
+func (d *DB) refreshPeers(ctx context.Context) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				msg, err := d.netSubscription.Next(ctx)
+				if err != nil {
+					log.Err(err).Msg("try net subscription read next message")
+					continue
+				}
+				if msg.ReceivedFrom == d.host.ID() {
+					continue
+				}
+				d.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				err := d.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
+				if err != nil {
+					log.Err(err).
+						Str("current_peer_id", d.selfID.String()).
+						Msg("try publish message to net ps topic")
+				}
+				time.Sleep(20 * time.Second)
+			}
+		}
+	}()
+
 }
