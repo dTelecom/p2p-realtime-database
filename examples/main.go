@@ -41,7 +41,7 @@ func main() {
 
 	err = h.Connect(ctx, *inf)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
 	fmt.Printf("Host id is %s\n", h.ID().String())
