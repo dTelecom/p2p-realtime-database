@@ -7,31 +7,25 @@ import (
 	"syscall"
 	"time"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-
 	p2p_database "github.com/dTelecom/p2p-database"
+	ipfslite "github.com/hsanjuan/ipfs-lite"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	h, prvKey, pubKey, err := p2p_database.MakeHost(3500, true)
+	h, err := p2p_database.MakeHost(3500, true)
 	if err != nil {
 		panic(err)
 	}
 
-	ps, err := pubsub.NewGossipSub(ctx, h)
+	db, err := p2p_database.Connect(ctx, h, ipfslite.DefaultBootstrapPeers(), "chat")
+	err = db.Set(ctx, "key", "value")
 	if err != nil {
 		panic(err)
 	}
-
-	db, err := p2p_database.Connect(ctx, h, prvKey, pubKey, "chat", ps)
-	err = db.Set(ctx, "key", "value", time.Second)
-	if err != nil {
-		panic(err)
-	}
-	err = db.Set(ctx, "foo", "bar", time.Second)
+	err = db.Set(ctx, "foo", "bar")
 	if err != nil {
 		panic(err)
 	}
@@ -52,6 +46,7 @@ func main() {
 	shutdownCtx, c := context.WithTimeout(context.Background(), 15*time.Second)
 	defer c()
 
+	fmt.Println("Disconnecting...")
 	err = db.Disconnect(shutdownCtx)
 	if err != nil {
 		panic(err)
