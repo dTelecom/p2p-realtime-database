@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,17 +22,13 @@ func main() {
 		panic(err)
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/65.21.98.65/tcp/3500/p2p/QmdGjE3xXzxUH4TJgghe4qNNAbG3Q2cJ6g6qtHfxGn7qjT")
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmahHkfYyKFeSakXjabLqGocKCrRDx6XWcnkQWzKNr2Weu")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Printf("Host id is %s\n", h.ID().String())
-
-	//bootstrapPeers := ipfslite.DefaultBootstrapPeers()
-	//bootstrapPeers = append(bootstrapPeers, *inf)
-
 	h.ConnManager().TagPeer(inf.ID, "keep", 100)
 
 	db, err := p2p_database.Connect(ctx, h, []peer.AddrInfo{*inf}, "chat")
@@ -43,7 +40,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = db.Set(ctx, "foo2", "bar2")
+	err = db.Set(ctx, "foo3", "bar2")
 	if err != nil {
 		panic(err)
 	}
@@ -58,6 +55,16 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("Value foo %v\n", v2)
+
+	var i int
+	for {
+		err = db.Set(ctx, "foo_"+strconv.Itoa(i), "bar2")
+		if err != nil {
+			panic(err)
+		}
+		i++
+		time.Sleep(time.Second)
+	}
 
 	<-ctx.Done()
 
