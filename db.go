@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	logging "github.com/ipfs/go-log"
 	"sync"
 	"time"
 
@@ -83,7 +84,10 @@ func Connect(
 	}
 	ipfs.Bootstrap(bootstrapPeers)
 
+	logging.SetLogLevel("globaldb", "debug")
+
 	crtdOpts := crdt.DefaultOptions()
+	crtdOpts.Logger = logging.Logger("globaldb")
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
 		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
@@ -91,6 +95,7 @@ func Connect(
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
 	}
+	crtdOpts.DAGSyncerTimeout = time.Second
 
 	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+name)
 	if err != nil {
@@ -100,6 +105,11 @@ func Connect(
 	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+name), ipfs, pubsubBC, crtdOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "init crdt")
+	}
+
+	err = datastoreCrdt.Sync(ctx, datastore.NewKey("/"))
+	if err != nil {
+		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
 	db := &DB{
@@ -127,6 +137,9 @@ func (d *DB) Set(ctx context.Context, key, value string) error {
 	if err != nil {
 		return errors.Wrap(err, "crdt put")
 	}
+	d.crdt.Sync(ctx, datastore.NewKey("/"))
+	d.crdt.Sync(ctx, datastore.NewKey(key))
+
 	return nil
 }
 
@@ -135,6 +148,8 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 		return "", ErrEmptyKey
 	}
 
+	d.crdt.Sync(ctx, datastore.NewKey("/"))
+	d.crdt.Sync(ctx, datastore.NewKey(key))
 	val, err := d.crdt.Get(ctx, datastore.NewKey(key))
 	if err != nil {
 		return "", errors.Wrap(err, "crdt get")

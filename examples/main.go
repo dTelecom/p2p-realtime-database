@@ -8,7 +8,6 @@ import (
 	"time"
 
 	p2p_database "github.com/dTelecom/p2p-database"
-	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -30,12 +29,12 @@ func main() {
 
 	fmt.Printf("Host id is %s\n", h.ID().String())
 
-	bootstrapPeers := ipfslite.DefaultBootstrapPeers()
-	bootstrapPeers = append(bootstrapPeers, *inf)
+	//bootstrapPeers := ipfslite.DefaultBootstrapPeers()
+	//bootstrapPeers = append(bootstrapPeers, *inf)
 
 	h.ConnManager().TagPeer(inf.ID, "keep", 100)
 
-	db, err := p2p_database.Connect(ctx, h, bootstrapPeers, "chat")
+	db, err := p2p_database.Connect(ctx, h, []peer.AddrInfo{*inf}, "chat")
 	//err = db.Set(ctx, "key", "value")
 	//if err != nil {
 	//	panic(err)
@@ -48,8 +47,6 @@ func main() {
 	//if err != nil {
 	//	panic(err)
 	//}
-
-	time.Sleep(10 * time.Second)
 
 	v, err := db.Get(ctx, "key")
 	if err != nil {
