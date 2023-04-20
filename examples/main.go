@@ -28,12 +28,12 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	h, err := p2p_database.MakeHost(int(*nodePort), false)
+	h, dht, err := p2p_database.MakeHost(ctx, int(*nodePort), false)
 	if err != nil {
 		panic(err)
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/Qmb2L34RkrDsHyAEk5HNkXhd9v9HjwFtWBiXZEcDTNxyLU")
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/QmYw5WSR9T8bg6HgcUgJwD1NZHj2h4tTvyp3ysGJFA6Gmw")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
 	if err != nil {
 		panic(err)
@@ -47,7 +47,7 @@ func main() {
 	fmt.Printf("Host id is %s\n", h.ID().String())
 	h.ConnManager().TagPeer(inf.ID, "keep", 100)
 
-	db, err := p2p_database.Connect(ctx, h, []peer.AddrInfo{*inf}, "chat")
+	db, err := p2p_database.Connect(ctx, h, dht, []peer.AddrInfo{*inf}, "chat")
 
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)

@@ -1,39 +1,39 @@
 package p2p_database
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
+	ipfslite "github.com/hsanjuan/ipfs-lite"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"io"
 	"log"
 	mrand "math/rand"
 
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/pkg/errors"
 )
 
-func MakeHost(port int, debug bool) (host.Host, error) {
+func MakeHost(ctx context.Context, port int, debug bool) (host.Host, *dual.DHT, error) {
 	randomGenerator := getRandomGenerator(port, debug)
 
 	prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, randomGenerator)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 
-	h, err := libp2p.New(
-		libp2p.ListenAddrs(sourceMultiAddr),
-		libp2p.Identity(prvKey),
+	return ipfslite.SetupLibp2p(
+		ctx,
+		prvKey,
+		nil,
+		[]multiaddr.Multiaddr{sourceMultiAddr},
+		nil,
+		ipfslite.Libp2pOptionsExtra...,
 	)
-	if err != nil {
-		return nil, errors.Wrap(err, "make host")
-	}
-
-	return h, nil
 }
 
 func getRandomGenerator(port int, debug bool) io.Reader {

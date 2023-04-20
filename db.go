@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"sync"
 	"time"
 
@@ -65,16 +66,12 @@ type DB struct {
 func Connect(
 	ctx context.Context,
 	h host.Host,
+	dht *dual.DHT,
 	bootstrapPeers []peer.AddrInfo,
 	name string,
 	opts ...dht.Option,
 ) (*DB, error) {
 	crypto.MinRsaKeyBits = 1024
-
-	kadDHT, err := dht.New(ctx, h, opts...)
-	if err != nil {
-		return nil, errors.Wrap(err, "create dht")
-	}
 
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
@@ -85,7 +82,7 @@ func Connect(
 	}
 
 	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
-	ipfs, err := ipfslite.New(ctx, ds, nil, h, kadDHT, nil)
+	ipfs, err := ipfslite.New(ctx, ds, nil, h, dht, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
 	}
@@ -102,7 +99,6 @@ func Connect(
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
 	}
-	crtdOpts.DAGSyncerTimeout = time.Second
 
 	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+name)
 	if err != nil {
@@ -319,6 +315,9 @@ func (d *DB) refreshPeers(ctx context.Context) {
 				if msg.ReceivedFrom == d.host.ID() {
 					continue
 				}
+
+				log.Info().Msgf("got net event from peer %s", msg.ReceivedFrom)
+
 				d.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
 			}
 		}
