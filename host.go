@@ -2,11 +2,7 @@ package p2p_database
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"io"
-	mrand "math/rand"
-
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/libp2p/go-libp2p"
@@ -18,16 +14,8 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-func MakeHost(ctx context.Context, port int, debug bool) (host.Host, *dual.DHT, error) {
-	//randomGenerator := getRandomGenerator(port, debug)
-
-	//prvKey, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, randomGenerator)
-	//if err != nil {
-	//	log.Println(err)
-	//	return nil, nil, err
-	//}
-
-	prvKey, err := eth_crypto.HexToECDSA("9ad26aeb690b637e7bce2718a08f25fe11ea79142fd1f6987b0b2cfef8ab76ae")
+func MakeHost(ctx context.Context, ethPrivateKey string, port int, debug bool) (host.Host, *dual.DHT, error) {
+	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
 	}
@@ -41,7 +29,10 @@ func MakeHost(ctx context.Context, port int, debug bool) (host.Host, *dual.DHT, 
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 
 	opts := ipfslite.Libp2pOptionsExtra
-	opts = append(opts, libp2p.ConnectionGater(EthConnectionGater{}))
+	opts = append(
+		opts,
+		libp2p.ConnectionGater(NewEthConnectionGater()),
+	)
 
 	return ipfslite.SetupLibp2p(
 		ctx,
@@ -49,14 +40,6 @@ func MakeHost(ctx context.Context, port int, debug bool) (host.Host, *dual.DHT, 
 		nil,
 		[]multiaddr.Multiaddr{sourceMultiAddr},
 		nil,
-		ipfslite.Libp2pOptionsExtra...,
+		opts...,
 	)
-}
-
-func getRandomGenerator(port int, debug bool) io.Reader {
-	if debug {
-		return mrand.New(mrand.NewSource(int64(port)))
-	} else {
-		return rand.Reader
-	}
 }

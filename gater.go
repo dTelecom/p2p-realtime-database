@@ -1,6 +1,7 @@
 package p2p_database
 
 import (
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -8,8 +9,14 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
+var log = logging.Logger("eth-gater")
+
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
+}
+
+func NewEthConnectionGater() *EthConnectionGater {
+	return &EthConnectionGater{}
 }
 
 func (e EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
@@ -21,8 +28,7 @@ func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Mu
 }
 
 func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (allow bool) {
-	//TODO implement me
-	panic("implement me")
+	return true
 }
 
 func (e EthConnectionGater) InterceptSecured(direction network.Direction, id peer.ID, multiaddrs network.ConnMultiaddrs) (allow bool) {
@@ -30,18 +36,19 @@ func (e EthConnectionGater) InterceptSecured(direction network.Direction, id pee
 }
 
 func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, reason control.DisconnectReason) {
-	//TODO implement me
-	panic("implement me")
+	return true, 0
 }
 
 func checkPeerId(p peer.ID) bool {
 	pubKey, err := p.ExtractPublicKey()
 	if err != nil {
+		log.Errorf("gater cannot extract public key: %s", err)
 		return false
 	}
 
 	_, err = GetEthAddrFromPeer(pubKey)
 	if err != nil {
+		log.Errorf("error extract eth address: %s", err)
 		return false
 	}
 

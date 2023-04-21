@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
@@ -23,7 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/rs/zerolog/log"
+	zerolog "github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -218,7 +216,7 @@ func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler,
 	d.handleGroup.Go(func() error {
 		err = d.listenEvents(ctx, d.topicSubscriptions[topic])
 		if err != nil {
-			log.Log().Err(err).Str("topic", t.String()).Msg("pub sub listen events")
+			zerolog.Log().Err(err).Str("topic", t.String()).Msg("pub sub listen events")
 		}
 		return err
 	})
@@ -253,7 +251,7 @@ func (d *DB) Disconnect(ctx context.Context) error {
 			s.subscription.Cancel()
 			err := s.topic.Close()
 			if err != nil {
-				log.Err(err).
+				zerolog.Err(err).
 					Str("current_peer_id", d.selfID.String()).
 					Str("topic", s.topic.String()).
 					Msg("try close db topic")
@@ -298,7 +296,7 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 		default:
 			msg, err := topicSub.subscription.Next(ctx)
 			if err != nil {
-				log.Err(err).
+				zerolog.Err(err).
 					Str("current_peer_id", d.selfID.String()).
 					Msg("try get next pub sub message")
 
@@ -313,7 +311,7 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 			event := Event{}
 			err = json.Unmarshal(msg.Data, &event)
 			if err != nil {
-				log.Err(err).
+				zerolog.Err(err).
 					Str("current_peer_id", d.selfID.String()).
 					Str("from", msg.ReceivedFrom.String()).
 					Str("message", string(msg.Data)).
@@ -334,19 +332,19 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			default:
 				msg, err := d.netSubscription.Next(ctx)
 				if err != nil {
-					log.Err(err).Msg("try net subscription read next message")
+					zerolog.Err(err).Msg("try net subscription read next message")
 					continue
 				}
 
 				pubKey, err := msg.ReceivedFrom.ExtractPublicKey()
 				if err != nil {
-					log.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract pub key from peer")
+					zerolog.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract pub key from peer")
 					continue
 				}
 
 				_, err = GetEthAddrFromPeer(pubKey)
 				if err != nil {
-					log.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract eth addr from pub key")
+					zerolog.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract eth addr from pub key")
 					continue
 				}
 
@@ -369,7 +367,7 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			default:
 				err := d.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
 				if err != nil {
-					log.Err(err).
+					zerolog.Err(err).
 						Str("current_peer_id", d.selfID.String()).
 						Msg("try publish message to net ps topic")
 				}
@@ -378,15 +376,4 @@ func (d *DB) refreshPeers(ctx context.Context) {
 		}
 	}()
 
-}
-
-func GetEthAddrFromPeer(pubkey crypto.PubKey) (string, error) {
-	dbytes, _ := pubkey.Raw()
-	k, err := secp256k1.ParsePubKey(dbytes)
-
-	if err != nil {
-		return "", err
-	}
-
-	return eth_crypto.PubkeyToAddress(*k.ToECDSA()).Hex(), nil
 }

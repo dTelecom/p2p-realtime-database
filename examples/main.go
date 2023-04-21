@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,10 +24,15 @@ var (
 func main() {
 	flag.Parse()
 
+	if len(os.Args) < 2 {
+		log.Fatalf("expected private key ethereum wallet as first argument: ./main")
+	}
+	ethPrivateKey := os.Args[1]
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	h, dht, err := p2p_database.MakeHost(ctx, int(*nodePort), false)
+	h, dht, err := p2p_database.MakeHost(ctx, ethPrivateKey, int(*nodePort), false)
 	if err != nil {
 		panic(err)
 	}
