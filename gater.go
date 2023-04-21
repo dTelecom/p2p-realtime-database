@@ -34,8 +34,7 @@ func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (
 }
 
 func (e EthConnectionGater) InterceptSecured(direction network.Direction, id peer.ID, multiaddrs network.ConnMultiaddrs) (allow bool) {
-	log.Infof("Call InterceptSecured %s", id.String())
-	return checkPeerId(id, "InterceptSecured")
+	return true
 }
 
 func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, reason control.DisconnectReason) {

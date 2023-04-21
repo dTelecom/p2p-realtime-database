@@ -31,7 +31,7 @@ func main() {
 		log.Fatalf("expected private key ethereum wallet as first argument: ./main")
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
 	h, dht, err := p2p_database.MakeHost(ctx, *ethPrivateKey, int(*nodePort), false)
