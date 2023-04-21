@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"sync"
 	"time"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	eth_crypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/ipfs/go-datastore"
@@ -146,6 +149,20 @@ func Connect(
 	return db, nil
 }
 
+func (d *DB) List(ctx context.Context) ([]string, error) {
+	r, err := d.crdt.Query(ctx, query.Query{KeysOnly: true})
+	if err != nil {
+		return nil, errors.Wrap(err, "crdt list query")
+	}
+
+	var keys []string
+	for k := range r.Next() {
+		keys = append(keys, k.Key)
+	}
+
+	return keys, nil
+}
+
 func (d *DB) Set(ctx context.Context, key, value string) error {
 	if len(key) == 0 {
 		return ErrEmptyKey
@@ -170,6 +187,14 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 	}
 
 	return string(val), nil
+}
+
+func (d *DB) Remove(ctx context.Context, key string) error {
+	err := d.crdt.Delete(ctx, datastore.NewKey(key))
+	if err != nil {
+		return errors.Wrap(err, "crdt delete key")
+	}
+	return nil
 }
 
 func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler, opts ...pubsub.TopicOpt) error {
@@ -312,6 +337,21 @@ func (d *DB) refreshPeers(ctx context.Context) {
 					log.Err(err).Msg("try net subscription read next message")
 					continue
 				}
+
+				pubKey, err := msg.ReceivedFrom.ExtractPublicKey()
+				if err != nil {
+					log.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract pub key from peer")
+					continue
+				}
+
+				_, err = GetEthAddrFromPeer(pubKey)
+				if err != nil {
+					log.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract eth addr from pub key")
+					continue
+				}
+
+				//log.Info().Msg(ethAddr)
+
 				if msg.ReceivedFrom == d.host.ID() {
 					continue
 				}
@@ -338,4 +378,15 @@ func (d *DB) refreshPeers(ctx context.Context) {
 		}
 	}()
 
+}
+
+func GetEthAddrFromPeer(pubkey crypto.PubKey) (string, error) {
+	dbytes, _ := pubkey.Raw()
+	k, err := secp256k1.ParsePubKey(dbytes)
+
+	if err != nil {
+		return "", err
+	}
+
+	return eth_crypto.PubkeyToAddress(*k.ToECDSA()).Hex(), nil
 }

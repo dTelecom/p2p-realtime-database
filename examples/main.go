@@ -62,6 +62,28 @@ l:
 		switch fields[0] {
 		case "exit", "quit":
 			break l
+		case "list":
+			keys, err := db.List(ctx)
+			if err != nil {
+				fmt.Printf("error list keys %s\n", err)
+			} else {
+				fmt.Printf("Found %d keys", len(keys))
+				for _, k := range keys {
+					fmt.Println(k)
+				}
+			}
+		case "del":
+			if len(fields) < 2 {
+				fmt.Println("del <key>")
+				fmt.Println("> ")
+				continue
+			}
+			err := db.Remove(ctx, fields[1])
+			if err != nil {
+				fmt.Printf("error remove key %s\n", err)
+			} else {
+				fmt.Println("Successfully remove key")
+			}
 		case "get":
 			if len(fields) < 2 {
 				fmt.Println("get <key>")
