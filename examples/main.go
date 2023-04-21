@@ -79,8 +79,11 @@ l:
 						default:
 							fmt.Println("Peers:")
 							for _, p := range connectedPeers(h) {
-								fmt.Printf("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
+								pubKey, _ := p.ID.ExtractPublicKey()
+								eth, _ := p2p_database.GetEthAddrFromPeer(pubKey)
+								fmt.Printf("Peer [%s] %s %s\r\n", p.ID, p.Addrs[0].String(), eth)
 							}
+							fmt.Println()
 							time.Sleep(3 * time.Second)
 						case <-quitDebugCh:
 							return
