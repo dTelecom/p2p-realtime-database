@@ -3,6 +3,7 @@ package p2p_database
 import (
 	"context"
 	"fmt"
+	"github.com/libp2p/go-libp2p"
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	ipfslite "github.com/hsanjuan/ipfs-lite"
@@ -29,10 +30,10 @@ func MakeHost(ctx context.Context, ethPrivateKey string, port int, debug bool) (
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 
 	opts := ipfslite.Libp2pOptionsExtra
-	//opts = append(
-	//	opts,
-	//	libp2p.ConnectionGater(NewEthConnectionGater()),
-	//)
+	opts = append(
+		opts,
+		libp2p.ConnectionGater(NewEthConnectionGater()),
+	)
 
 	return ipfslite.SetupLibp2p(
 		ctx,
