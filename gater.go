@@ -42,13 +42,13 @@ func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, re
 func checkPeerId(p peer.ID) bool {
 	pubKey, err := p.ExtractPublicKey()
 	if err != nil {
-		log.Errorf("gater cannot extract public key: %s", err)
+		log.Errorf("gater cannot extract public key: %s of %s", err, p.String())
 		return false
 	}
 
 	_, err = GetEthAddrFromPeer(pubKey)
 	if err != nil {
-		log.Errorf("error extract eth address: %s", err)
+		log.Errorf("error extract eth address: %s of %s", err, p.String())
 		return false
 	}
 
