@@ -19,6 +19,7 @@ import (
 )
 
 var (
+	isBootstrap   = flag.Bool("b", false, "is bootstrap node")
 	nodePort      = flag.Uint("p", 3500, "node port")
 	ethPrivateKey = flag.String("pk", "", "ethereum wallet private key")
 )
@@ -44,15 +45,14 @@ func main() {
 		panic(err)
 	}
 
-	err = h.Connect(ctx, *inf)
-	if err != nil {
-		fmt.Println(err)
-	}
-
 	fmt.Printf("Host id is %s\n", h.ID().String())
 	h.ConnManager().TagPeer(inf.ID, "keep", 100)
 
-	db, err := p2p_database.Connect(ctx, h, dht, []peer.AddrInfo{*inf}, "chat")
+	bootstrapNodes := []peer.AddrInfo{*inf}
+	if *isBootstrap {
+		bootstrapNodes = []peer.AddrInfo{}
+	}
+	db, err := p2p_database.Connect(ctx, h, dht, bootstrapNodes, "chat")
 
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
