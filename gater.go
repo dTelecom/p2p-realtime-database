@@ -20,10 +20,12 @@ func NewEthConnectionGater() *EthConnectionGater {
 }
 
 func (e EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
+	log.Infof("Call InterceptPeerDial %s", p.String())
 	return checkPeerId(p, "InterceptPeerDial")
 }
 
 func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
+	log.Infof("Call InterceptAddrDial %s", id.String())
 	return checkPeerId(id, "InterceptAddrDial")
 }
 
@@ -32,6 +34,7 @@ func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (
 }
 
 func (e EthConnectionGater) InterceptSecured(direction network.Direction, id peer.ID, multiaddrs network.ConnMultiaddrs) (allow bool) {
+	log.Infof("Call InterceptSecured %s", id.String())
 	return checkPeerId(id, "InterceptSecured")
 }
 

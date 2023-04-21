@@ -6,7 +6,6 @@ import (
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	ipfslite "github.com/hsanjuan/ipfs-lite"
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/pkg/errors"
@@ -30,10 +29,10 @@ func MakeHost(ctx context.Context, ethPrivateKey string, port int, debug bool) (
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 
 	opts := ipfslite.Libp2pOptionsExtra
-	opts = append(
-		opts,
-		libp2p.ConnectionGater(NewEthConnectionGater()),
-	)
+	//opts = append(
+	//	opts,
+	//	libp2p.ConnectionGater(NewEthConnectionGater()),
+	//)
 
 	return ipfslite.SetupLibp2p(
 		ctx,
