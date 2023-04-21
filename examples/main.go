@@ -13,6 +13,7 @@ import (
 	"time"
 
 	p2p_database "github.com/dTelecom/p2p-database"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -56,6 +57,8 @@ func main() {
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
 
+	var quitDebugCh chan struct{}
+
 l:
 	for scanner.Scan() {
 		text := scanner.Text()
@@ -66,6 +69,30 @@ l:
 		}
 
 		switch fields[0] {
+		case "debug":
+			switch fields[1] {
+			case "on":
+				quitDebugCh = make(chan struct{})
+				go func() {
+					for {
+						select {
+						default:
+							fmt.Println("Peers:")
+							for _, p := range connectedPeers(h) {
+								pubKey, _ := p.ID.ExtractPublicKey()
+								eth, _ := p2p_database.GetEthAddrFromPeer(pubKey)
+								fmt.Printf("Peer [%s] %s %s\r\n", p.ID, p.Addrs[0].String(), eth)
+							}
+							fmt.Println()
+							time.Sleep(3 * time.Second)
+						case <-quitDebugCh:
+							return
+						}
+					}
+				}()
+			case "off":
+				close(quitDebugCh)
+			}
 		case "exit", "quit":
 			break l
 		case "list":
@@ -126,4 +153,15 @@ l:
 	if err != nil {
 		panic(err)
 	}
+}
+
+func connectedPeers(h host.Host) []*peer.AddrInfo {
+	var pinfos []*peer.AddrInfo
+	for _, c := range h.Network().Conns() {
+		pinfos = append(pinfos, &peer.AddrInfo{
+			ID:    c.RemotePeer(),
+			Addrs: []multiaddr.Multiaddr{c.RemoteMultiaddr()},
+		})
+	}
+	return pinfos
 }
