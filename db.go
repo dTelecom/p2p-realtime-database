@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
+
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
-	"sync"
-	"time"
 
 	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log"
@@ -39,7 +40,8 @@ const (
 )
 
 var (
-	ErrEmptyKey = errors.New("empty key")
+	ErrEmptyKey                    = errors.New("empty key")
+	ErrEthereumWalletNotRegistered = errors.New("ethereum address not registered")
 )
 
 type PubSubHandler func(Event)
@@ -93,6 +95,14 @@ func Connect(
 	h, kdht, err := makeHost(ctx, ethSmartContract, ethPrivateKey, port)
 	if err != nil {
 		return nil, errors.Wrap(err, "make libp2p host")
+	}
+
+	valid, err := ethSmartContract.ValidatePeer(h.ID())
+	if err != nil {
+		return nil, errors.Wrap(err, "try validate current peer id in smart contract")
+	}
+	if !valid {
+		return nil, ErrEthereumWalletNotRegistered
 	}
 
 	ps, err := pubsub.NewGossipSub(ctx, h)
