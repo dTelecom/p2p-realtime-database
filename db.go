@@ -91,6 +91,9 @@ func Connect(
 		port = DefaultPort
 	}
 	h, kdht, err := makeHost(ctx, ethSmartContract, ethPrivateKey, port)
+	if err != nil {
+		return nil, errors.Wrap(err, "make libp2p host")
+	}
 
 	ps, err := pubsub.NewGossipSub(ctx, h)
 	if err != nil {
