@@ -293,8 +293,8 @@ func (d *DB) Disconnect(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (d *DB) GetHost() *host.Host {
-	return &d.host
+func (d *DB) GetHost() host.Host {
+	return d.host
 }
 
 func (d *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {

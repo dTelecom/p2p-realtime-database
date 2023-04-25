@@ -37,6 +37,9 @@ func main() {
 		panic(err)
 	}
 
+	h := db.GetHost()
+	fmt.Printf("Peer id %s\n", h.ID().String())
+
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -61,7 +64,7 @@ l:
 						select {
 						default:
 							fmt.Println("Peers:")
-							for _, p := range connectedPeers(*db.GetHost()) {
+							for _, p := range connectedPeers(db.GetHost()) {
 								//pubKey, _ := p.ID.ExtractPublicKey()
 								//eth, _ := p2p_database.GetEthAddrFromPeer(pubKey)
 								fmt.Printf("Peer [%s] %s %s\r\n", p.ID, p.Addrs[0].String())
