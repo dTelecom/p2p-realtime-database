@@ -33,6 +33,9 @@ func main() {
 	defer cancel()
 
 	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat")
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
