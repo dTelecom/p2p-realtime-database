@@ -13,20 +13,24 @@ var log = logging.Logger("eth-gater")
 
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
+
+	contract *EthSmartContract
 }
 
-func NewEthConnectionGater() *EthConnectionGater {
-	return &EthConnectionGater{}
+func NewEthConnectionGater(contract *EthSmartContract) *EthConnectionGater {
+	return &EthConnectionGater{
+		contract: contract,
+	}
 }
 
 func (e EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 	log.Infof("Call InterceptPeerDial %s", p.String())
-	return checkPeerId(p, "InterceptPeerDial")
+	return e.checkPeerId(p, "InterceptPeerDial")
 }
 
 func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
 	log.Infof("Call InterceptAddrDial %s", id.String())
-	return checkPeerId(id, "InterceptAddrDial")
+	return e.checkPeerId(id, "InterceptAddrDial")
 }
 
 func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (allow bool) {
@@ -41,18 +45,7 @@ func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, re
 	return true, 0
 }
 
-func checkPeerId(p peer.ID, method string) bool {
-	pubKey, err := p.ExtractPublicKey()
-	if err != nil {
-		log.Errorf("method %s gater cannot extract public key: %s of %s", method, err, p.String())
-		return false
-	}
-
-	_, err = GetEthAddrFromPeer(pubKey)
-	if err != nil {
-		log.Errorf("method %s error extract eth address: %s of %s", method, err, p.String())
-		return false
-	}
-
-	return true
+func (e EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
+	r, _ := e.contract.ValidatePeer(p)
+	return r
 }

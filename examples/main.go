@@ -19,8 +19,6 @@ import (
 )
 
 var (
-	isBootstrap   = flag.Bool("b", false, "is bootstrap node")
-	nodePort      = flag.Uint("p", 3500, "node port")
 	ethPrivateKey = flag.String("pk", "", "ethereum wallet private key")
 )
 
@@ -34,25 +32,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	h, dht, err := p2p_database.MakeHost(ctx, *ethPrivateKey, int(*nodePort), false)
-	if err != nil {
-		panic(err)
-	}
-
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
-	inf, err := peer.AddrInfoFromP2pAddr(bstr)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Host id is %s\n", h.ID().String())
-	h.ConnManager().TagPeer(inf.ID, "keep", 100)
-
-	bootstrapNodes := []peer.AddrInfo{*inf}
-	if *isBootstrap {
-		bootstrapNodes = []peer.AddrInfo{}
-	}
-	db, err := p2p_database.Connect(ctx, h, dht, bootstrapNodes, "chat")
+	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat")
 
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
@@ -78,10 +58,10 @@ l:
 						select {
 						default:
 							fmt.Println("Peers:")
-							for _, p := range connectedPeers(h) {
-								pubKey, _ := p.ID.ExtractPublicKey()
-								eth, _ := p2p_database.GetEthAddrFromPeer(pubKey)
-								fmt.Printf("Peer [%s] %s %s\r\n", p.ID, p.Addrs[0].String(), eth)
+							for _, p := range connectedPeers(*db.GetHost()) {
+								//pubKey, _ := p.ID.ExtractPublicKey()
+								//eth, _ := p2p_database.GetEthAddrFromPeer(pubKey)
+								fmt.Printf("Peer [%s] %s %s\r\n", p.ID, p.Addrs[0].String())
 							}
 							fmt.Println()
 							time.Sleep(3 * time.Second)

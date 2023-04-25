@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	eth_crypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/libp2p/go-libp2p"
+	"github.com/multiformats/go-multiaddr"
 	"sync"
 	"time"
 
@@ -26,6 +29,8 @@ import (
 )
 
 const (
+	DefaultPort = 3500
+
 	DefaultDatabaseEventsBufferSize = 128
 	RebroadcastingInterval          = 1 * time.Second
 
@@ -50,10 +55,11 @@ type Event struct {
 }
 
 type DB struct {
-	Name   string
-	selfID peer.ID
-	host   host.Host
-	crdt   *crdt.Datastore
+	Name             string
+	selfID           peer.ID
+	host             host.Host
+	crdt             *crdt.Datastore
+	ethSmartContract *EthSmartContract
 
 	pubSub             *pubsub.PubSub
 	topicSubscriptions map[string]*TopicSubscription
@@ -66,9 +72,7 @@ type DB struct {
 
 func Connect(
 	ctx context.Context,
-	h host.Host,
-	dht *dual.DHT,
-	bootstrapPeers []peer.AddrInfo,
+	ethPrivateKey string,
 	name string,
 	opts ...dht.Option,
 ) (*DB, error) {
@@ -77,17 +81,33 @@ func Connect(
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
 
+	ethSmartContract, err := NewEthSmartContract()
+	if err != nil {
+		return nil, errors.Wrap(err, "create ethereum smart contract")
+	}
+
+	port := config.PeerListenPort
+	if port == 0 {
+		port = DefaultPort
+	}
+	h, kdht, err := makeHost(ctx, ethSmartContract, ethPrivateKey, port)
+
 	ps, err := pubsub.NewGossipSub(ctx, h)
 	if err != nil {
 		return nil, errors.Wrap(err, "create pubsub")
 	}
 
+	bootstrapNodes, err := ethSmartContract.GetBoostrapNodes()
+	if err != nil {
+		return nil, errors.Wrap(err, "get bootstrap nodes from smart contract")
+	}
+
 	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
-	ipfs, err := ipfslite.New(ctx, ds, nil, h, dht, nil)
+	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
 	}
-	ipfs.Bootstrap(bootstrapPeers)
+	ipfs.Bootstrap(bootstrapNodes)
 
 	logging.SetLogLevel("globaldb", "debug")
 
@@ -131,7 +151,8 @@ func Connect(
 		host:   h,
 		selfID: h.ID(),
 
-		crdt: datastoreCrdt,
+		ethSmartContract: ethSmartContract,
+		crdt:             datastoreCrdt,
 
 		pubSub:             ps,
 		topicSubscriptions: map[string]*TopicSubscription{},
@@ -269,6 +290,10 @@ func (d *DB) Disconnect(ctx context.Context) error {
 	return g.Wait()
 }
 
+func (d *DB) GetHost() *host.Host {
+	return &d.host
+}
+
 func (d *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
@@ -336,20 +361,6 @@ func (d *DB) refreshPeers(ctx context.Context) {
 					continue
 				}
 
-				pubKey, err := msg.ReceivedFrom.ExtractPublicKey()
-				if err != nil {
-					zerolog.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract pub key from peer")
-					continue
-				}
-
-				_, err = GetEthAddrFromPeer(pubKey)
-				if err != nil {
-					zerolog.Err(err).Str("peer_id", msg.ReceivedFrom.String()).Msg("cannot extract eth addr from pub key")
-					continue
-				}
-
-				//log.Info().Msg(ethAddr)
-
 				if msg.ReceivedFrom == d.host.ID() {
 					continue
 				}
@@ -375,5 +386,37 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			}
 		}
 	}()
+}
 
+func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, error) {
+	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
+	}
+
+	privKeyBytes := eth_crypto.FromECDSA(prvKey)
+	priv, err := crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "UnmarshalSecp256k1PrivateKey from eth private key")
+	}
+
+	sourceMultiAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "create multi addr")
+	}
+
+	opts := ipfslite.Libp2pOptionsExtra
+	opts = append(
+		opts,
+		libp2p.ConnectionGater(NewEthConnectionGater(ethSmartContract)),
+	)
+
+	return ipfslite.SetupLibp2p(
+		ctx,
+		priv,
+		nil,
+		[]multiaddr.Multiaddr{sourceMultiAddr},
+		nil,
+		opts...,
+	)
 }
