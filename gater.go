@@ -39,6 +39,7 @@ func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (
 	a, err := peer.AddrInfoFromP2pAddr(multiaddrs.RemoteMultiaddr())
 	if err != nil {
 		log.Warnf("AddrInfoFromP2pAddr from %s error %s", multiaddrs.RemoteMultiaddr(), err)
+		return false
 	}
 	return e.checkPeerId(a.ID, "InterceptAccept")
 }
