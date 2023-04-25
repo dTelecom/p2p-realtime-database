@@ -18,6 +18,8 @@ type EthConnectionGater struct {
 }
 
 func NewEthConnectionGater(contract *EthSmartContract) *EthConnectionGater {
+	logging.SetupLogging(logging.Config{Level: logging.LevelInfo})
+
 	return &EthConnectionGater{
 		contract: contract,
 	}
@@ -34,11 +36,15 @@ func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Mu
 }
 
 func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (allow bool) {
-	return true
+	a, err := peer.AddrInfoFromP2pAddr(multiaddrs.RemoteMultiaddr())
+	if err != nil {
+		log.Warnf("AddrInfoFromP2pAddr from %s error %s", multiaddrs.RemoteMultiaddr(), err)
+	}
+	return e.checkPeerId(a.ID, "InterceptAccept")
 }
 
 func (e EthConnectionGater) InterceptSecured(direction network.Direction, id peer.ID, multiaddrs network.ConnMultiaddrs) (allow bool) {
-	return true
+	return e.checkPeerId(id, "InterceptSecured")
 }
 
 func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, reason control.DisconnectReason) {
