@@ -8,3 +8,13 @@ export ETHEREUM_CONTRACT_ADDRESS=0xa99885B0Ce9cE7C8B93c15bFc4deeAec419f2393
 
 ./main -pk <privateKey>
 ```
+
+# Usage
+```
+> debug on
+> debug off
+> set key value
+> get key value
+> del key
+> list
+```

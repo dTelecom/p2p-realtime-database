@@ -17,19 +17,16 @@ import (
 	"strings"
 )
 
-var logger = logging.Logger("eth")
-
 type EthSmartContract struct {
 	client *contracts.Dtelecom
+	logger logging.ZapEventLogger
 }
 
-func NewEthSmartContract() (*EthSmartContract, error) {
+func NewEthSmartContract(logger logging.ZapEventLogger) (*EthSmartContract, error) {
 	networkHost := config.EthereumNetworkHost
 	if !strings.HasSuffix(networkHost, "/") {
 		networkHost = networkHost + "/"
 	}
-
-	logging.SetLogLevel("eth", "info")
 
 	client, err := ethclient.Dial(networkHost + config.EthereumNetworkKey)
 	if err != nil {
@@ -43,6 +40,7 @@ func NewEthSmartContract() (*EthSmartContract, error) {
 
 	return &EthSmartContract{
 		client: instance,
+		logger: logger,
 	}, nil
 }
 
@@ -57,7 +55,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 
 		peerId, err := e.getPeerIdFromPublicKey(n.Key)
 		if err != nil {
-			logger.Errorf(
+			e.logger.Errorf(
 				"get bootstrap peer id %s ip %s",
 				err,
 				ip,
@@ -69,7 +67,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 
 		addr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/3500/p2p/%s", ip, peerId))
 		if err != nil {
-			logger.Errorf(
+			e.logger.Errorf(
 				"error create multiaddr bootstrap node from contract %s ip %s",
 				err,
 				ip,
@@ -79,7 +77,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 
 		peerInfo, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
-			logger.Errorf("error fetch addr info for %s ip %s", err, ip)
+			e.logger.Errorf("error fetch addr info for %s ip %s", err, ip)
 			continue
 		}
 
@@ -87,7 +85,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 	}
 
 	if len(res) == 0 {
-		log.Errorf("empty list bootstrap nodes from smart contract")
+		e.logger.Errorf("empty list bootstrap nodes from smart contract")
 	}
 
 	return res, nil

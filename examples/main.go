@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	logging "github.com/ipfs/go-log/v2"
 	"log"
 	"os"
 	"os/signal"
@@ -32,7 +33,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat")
+	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat", *logging.Logger("db"))
 	if err != nil {
 		panic(err)
 	}
@@ -58,6 +59,8 @@ l:
 		case "debug":
 			switch fields[1] {
 			case "on":
+				logging.SetLogLevel("*", "debug")
+
 				quitDebugCh = make(chan struct{})
 				go func() {
 					for {

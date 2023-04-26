@@ -1,6 +1,9 @@
 package p2p_database
 
-import "github.com/caarlos0/env/v7"
+import (
+	"github.com/caarlos0/env/v7"
+	"log"
+)
 
 type EnvConfig struct {
 	PeerListenPort          int    `env:"PEER_LISTEN_PORT"`

@@ -12,7 +12,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/ipfs/go-datastore/query"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
@@ -25,7 +25,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	zerolog "github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -70,12 +69,15 @@ type DB struct {
 
 	netTopic        *pubsub.Topic
 	netSubscription *pubsub.Subscription
+
+	logger logging.ZapEventLogger
 }
 
 func Connect(
 	ctx context.Context,
 	ethPrivateKey string,
 	name string,
+	logger logging.ZapEventLogger,
 	opts ...dht.Option,
 ) (*DB, error) {
 	crypto.MinRsaKeyBits = 1024
@@ -83,7 +85,7 @@ func Connect(
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
 
-	ethSmartContract, err := NewEthSmartContract()
+	ethSmartContract, err := NewEthSmartContract(logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "create ethereum smart contract")
 	}
@@ -250,7 +252,7 @@ func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler,
 	d.handleGroup.Go(func() error {
 		err = d.listenEvents(ctx, d.topicSubscriptions[topic])
 		if err != nil {
-			zerolog.Log().Err(err).Str("topic", t.String()).Msg("pub sub listen events")
+			d.logger.Errorf("pub sub listen events topic %s err %s", topic, err)
 		}
 		return err
 	})
@@ -285,10 +287,7 @@ func (d *DB) Disconnect(ctx context.Context) error {
 			s.subscription.Cancel()
 			err := s.topic.Close()
 			if err != nil {
-				zerolog.Err(err).
-					Str("current_peer_id", d.selfID.String()).
-					Str("topic", s.topic.String()).
-					Msg("try close db topic")
+				d.logger.Errorf("try close db topic %s current peer id %s", s.topic, d.host.ID())
 			}
 		}
 		d.lock.RUnlock()
@@ -334,9 +333,7 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 		default:
 			msg, err := topicSub.subscription.Next(ctx)
 			if err != nil {
-				zerolog.Err(err).
-					Str("current_peer_id", d.selfID.String()).
-					Msg("try get next pub sub message")
+				d.logger.Errorf("try get next pub sub message error: %s", err)
 
 				continue
 			}
@@ -349,11 +346,7 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 			event := Event{}
 			err = json.Unmarshal(msg.Data, &event)
 			if err != nil {
-				zerolog.Err(err).
-					Str("current_peer_id", d.selfID.String()).
-					Str("from", msg.ReceivedFrom.String()).
-					Str("message", string(msg.Data)).
-					Msg("try unmarshal pub sub message")
+				d.logger.Errorf("try unmarshal pub sub message from %s error %s, data: %s", msg.ReceivedFrom, err, string(msg.Data))
 			}
 
 			topicSub.handler(event)
@@ -370,7 +363,7 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			default:
 				msg, err := d.netSubscription.Next(ctx)
 				if err != nil {
-					zerolog.Err(err).Msg("try net subscription read next message")
+					d.logger.Errorf("try net subscription read next message: %s", err)
 					continue
 				}
 
@@ -391,9 +384,7 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			default:
 				err := d.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
 				if err != nil {
-					zerolog.Err(err).
-						Str("current_peer_id", d.selfID.String()).
-						Msg("try publish message to net ps topic")
+					d.logger.Errorf("try publish message to net ps topic: %s", err)
 				}
 				time.Sleep(20 * time.Second)
 			}
@@ -421,7 +412,9 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 	opts := ipfslite.Libp2pOptionsExtra
 	opts = append(
 		opts,
-		libp2p.ConnectionGater(NewEthConnectionGater(ethSmartContract)),
+		libp2p.ConnectionGater(
+			NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+		),
 	)
 
 	return ipfslite.SetupLibp2p(
