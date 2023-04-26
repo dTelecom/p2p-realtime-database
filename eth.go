@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-var logger = logging.Logger("eth-gater")
+var logger = logging.Logger("eth")
 
 type EthSmartContract struct {
 	client *contracts.Dtelecom
@@ -28,6 +28,8 @@ func NewEthSmartContract() (*EthSmartContract, error) {
 	if !strings.HasSuffix(networkHost, "/") {
 		networkHost = networkHost + "/"
 	}
+
+	logging.SetLogLevel("eth", "info")
 
 	client, err := ethclient.Dial(networkHost + config.EthereumNetworkKey)
 	if err != nil {
@@ -62,6 +64,8 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 			)
 			continue
 		}
+
+		fmt.Printf("/ip4/%s/tcp/3500/p2p/%s\n", ip, peerId)
 
 		addr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/3500/p2p/%s", ip, peerId))
 		if err != nil {

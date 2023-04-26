@@ -18,7 +18,7 @@ type EthConnectionGater struct {
 }
 
 func NewEthConnectionGater(contract *EthSmartContract) *EthConnectionGater {
-	logging.SetupLogging(logging.Config{Level: logging.LevelInfo})
+	logging.SetLogLevel("eth-gater", "info")
 
 	return &EthConnectionGater{
 		contract: contract,
@@ -26,12 +26,10 @@ func NewEthConnectionGater(contract *EthSmartContract) *EthConnectionGater {
 }
 
 func (e EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
-	log.Infof("Call InterceptPeerDial %s", p.String())
 	return e.checkPeerId(p, "InterceptPeerDial")
 }
 
 func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
-	log.Infof("Call InterceptAddrDial %s", id.String())
 	return e.checkPeerId(id, "InterceptAddrDial")
 }
 
@@ -53,6 +51,18 @@ func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, re
 }
 
 func (e EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
-	r, _ := e.contract.ValidatePeer(p)
+	r, err := e.contract.ValidatePeer(p)
+
+	if err != nil {
+		log.Errorf("try validate peer %s with method %s error %s", p, method, err)
+		return false
+	}
+
+	if !r {
+		log.Warnf("try validate peer %s with method %s: invalid", p, method)
+	} else {
+		log.Infof("%s peer %s validation success", method, p)
+	}
+
 	return r
 }
