@@ -70,7 +70,6 @@ l:
 					for {
 						select {
 						default:
-							fmt.Println("Peers:")
 							for _, p := range connectedPeers(db.GetHost()) {
 								logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
 							}
