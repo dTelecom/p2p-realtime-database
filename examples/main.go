@@ -57,8 +57,6 @@ func main() {
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
 
-	var quitDebugCh chan struct{}
-
 l:
 	for scanner.Scan() {
 		text := scanner.Text()
@@ -69,6 +67,10 @@ l:
 		}
 
 		switch fields[0] {
+		case "peers":
+			for _, p := range connectedPeers(db.GetHost()) {
+				logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
+			}
 		case "debug":
 			switch fields[1] {
 			case "on":
@@ -77,24 +79,8 @@ l:
 					level = fields[2]
 				}
 				logging.SetLogLevel("*", level)
-
-				quitDebugCh = make(chan struct{})
-				go func() {
-					for {
-						select {
-						default:
-							for _, p := range connectedPeers(db.GetHost()) {
-								logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
-							}
-							time.Sleep(3 * time.Second)
-						case <-quitDebugCh:
-							return
-						}
-					}
-				}()
 			case "off":
 				logging.SetLogLevel("*", "error")
-				close(quitDebugCh)
 			}
 		case "exit", "quit":
 			break l
