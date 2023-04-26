@@ -80,6 +80,7 @@ l:
 					}
 				}()
 			case "off":
+				logging.SetLogLevel("*", "error")
 				close(quitDebugCh)
 			}
 		case "exit", "quit":
