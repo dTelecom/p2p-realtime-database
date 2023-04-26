@@ -11,7 +11,10 @@ export ETHEREUM_CONTRACT_ADDRESS=0xa99885B0Ce9cE7C8B93c15bFc4deeAec419f2393
 
 # Usage
 ```
-> debug on
+> debug on #debug mode
+> debug on info
+> debug on warning
+> debug on error
 > debug off
 > set key value
 > get key value

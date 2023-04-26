@@ -59,7 +59,11 @@ l:
 		case "debug":
 			switch fields[1] {
 			case "on":
-				logging.SetLogLevel("*", "debug")
+				level := "debug"
+				if len(fields) > 2 {
+					level = fields[2]
+				}
+				logging.SetLogLevel("*", level)
 
 				quitDebugCh = make(chan struct{})
 				go func() {
