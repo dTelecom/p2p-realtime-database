@@ -21,6 +21,10 @@ import (
 
 var (
 	ethPrivateKey = flag.String("pk", "", "ethereum wallet private key")
+
+	loggingDebug   = flag.Bool("vvv", false, "debug mode")
+	loggingInfo    = flag.Bool("vv", false, "info mode")
+	loggingWarning = flag.Bool("v", false, "warning mode")
 )
 
 func main() {
@@ -28,6 +32,15 @@ func main() {
 
 	if len(os.Args) < 2 {
 		log.Fatalf("expected private key ethereum wallet as first argument: ./main")
+	}
+
+	switch {
+	case *loggingDebug:
+		logging.SetLogLevel("*", "debug")
+	case *loggingInfo:
+		logging.SetLogLevel("*", "warning")
+	case *loggingWarning:
+		logging.SetLogLevel("*", "info")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
@@ -73,7 +86,6 @@ l:
 							for _, p := range connectedPeers(db.GetHost()) {
 								logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
 							}
-							fmt.Println()
 							time.Sleep(3 * time.Second)
 						case <-quitDebugCh:
 							return

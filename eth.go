@@ -63,7 +63,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 			continue
 		}
 
-		fmt.Printf("/ip4/%s/tcp/3500/p2p/%s\n", ip, peerId)
+		e.logger.Infof("Boostrap peer from smart contract /ip4/%s/tcp/3500/p2p/%s\n", ip, peerId)
 
 		addr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/3500/p2p/%s", ip, peerId))
 		if err != nil {
