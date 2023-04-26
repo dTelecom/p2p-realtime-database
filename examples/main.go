@@ -35,12 +35,12 @@ func main() {
 	}
 
 	switch {
+	case *loggingWarning:
+		logging.SetLogLevel("*", "warn")
+	case *loggingInfo:
+		logging.SetLogLevel("*", "info")
 	case *loggingDebug:
 		logging.SetLogLevel("*", "debug")
-	case *loggingInfo:
-		logging.SetLogLevel("*", "warning")
-	case *loggingWarning:
-		logging.SetLogLevel("*", "info")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
