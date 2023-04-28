@@ -2,6 +2,8 @@ package p2p_database
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/dTelecom/p2p-database/contracts"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,15 +16,14 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/praserx/ipconv"
-	"strings"
 )
 
 type EthSmartContract struct {
 	client *contracts.Dtelecom
-	logger logging.ZapEventLogger
+	logger *logging.ZapEventLogger
 }
 
-func NewEthSmartContract(logger logging.ZapEventLogger) (*EthSmartContract, error) {
+func NewEthSmartContract(logger *logging.ZapEventLogger) (*EthSmartContract, error) {
 	networkHost := config.EthereumNetworkHost
 	if !strings.HasSuffix(networkHost, "/") {
 		networkHost = networkHost + "/"

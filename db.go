@@ -70,14 +70,14 @@ type DB struct {
 	netTopic        *pubsub.Topic
 	netSubscription *pubsub.Subscription
 
-	logger logging.ZapEventLogger
+	logger *logging.ZapEventLogger
 }
 
 func Connect(
 	ctx context.Context,
 	ethPrivateKey string,
 	name string,
-	logger logging.ZapEventLogger,
+	logger *logging.ZapEventLogger,
 	opts ...dht.Option,
 ) (*DB, error) {
 	crypto.MinRsaKeyBits = 1024
@@ -165,6 +165,7 @@ func Connect(
 		Name:   name,
 		host:   h,
 		selfID: h.ID(),
+		logger: logger,
 
 		ethSmartContract: ethSmartContract,
 		crdt:             datastoreCrdt,

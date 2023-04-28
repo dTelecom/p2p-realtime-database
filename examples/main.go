@@ -47,7 +47,10 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat", *logging.Logger("db"))
+	logger := logging.Logger("db")
+	defer logger.Sync()
+
+	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat", logger)
 	if err != nil {
 		panic(err)
 	}
