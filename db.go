@@ -319,7 +319,7 @@ func (d *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, er
 	}
 
 	t, err := d.pubSub.Join(topic, opts...)
-	if err != nil {
+	if err != nil && err.Error() != "topic already exists" {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
 
