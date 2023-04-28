@@ -63,6 +63,7 @@ type DB struct {
 	ethSmartContract *EthSmartContract
 
 	pubSub             *pubsub.PubSub
+	joinedTopics       map[string]*pubsub.Topic
 	topicSubscriptions map[string]*TopicSubscription
 	handleGroup        *errgroup.Group
 	lock               sync.RWMutex
@@ -172,6 +173,7 @@ func Connect(
 
 		pubSub:             ps,
 		topicSubscriptions: map[string]*TopicSubscription{},
+		joinedTopics:       map[string]*pubsub.Topic{},
 		handleGroup:        grp,
 		lock:               sync.RWMutex{},
 
@@ -312,16 +314,20 @@ func (d *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, er
 	defer d.lock.Unlock()
 
 	ts, ok := d.topicSubscriptions[topic]
-
 	//already joined
 	if ok {
 		return ts.topic, nil
 	}
 
+	if t, ok := d.joinedTopics[topic]; ok {
+		return t, nil
+	}
+
 	t, err := d.pubSub.Join(topic, opts...)
-	if err != nil && err.Error() != "topic already exists" {
+	if err != nil {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
+	d.joinedTopics[topic] = t
 
 	return t, nil
 }
