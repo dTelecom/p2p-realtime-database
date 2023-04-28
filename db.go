@@ -39,8 +39,9 @@ const (
 )
 
 var (
-	ErrEmptyKey                    = errors.New("empty key")
-	ErrEthereumWalletNotRegistered = errors.New("ethereum address not registered")
+	ErrEmptyKey                     = errors.New("empty key")
+	ErrEthereumWalletNotRegistered  = errors.New("ethereum address not registered")
+	ErrIncorrectSubscriptionHandler = errors.New("incorrect subscription handler")
 )
 
 type PubSubHandler func(Event)
@@ -245,10 +246,15 @@ func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler,
 		return errors.Wrap(err, "pub sub subscribe topic")
 	}
 
+	if handler == nil {
+		return ErrIncorrectSubscriptionHandler
+	}
+
 	d.lock.Lock()
 	d.topicSubscriptions[topic] = &TopicSubscription{
 		subscription: s,
 		topic:        t,
+		handler:      handler,
 	}
 	d.lock.Unlock()
 
@@ -269,7 +275,12 @@ func (d *DB) Publish(ctx context.Context, topic, value string, opts ...pubsub.Pu
 		return err
 	}
 
-	err = t.Publish(ctx, []byte(value), opts...)
+	marshaled, err := json.Marshal(Event{Message: value})
+	if err != nil {
+		return errors.Wrap(err, "try marshal message")
+	}
+
+	err = t.Publish(ctx, marshaled, opts...)
 	if err != nil {
 		return errors.Wrap(err, "pub sub publish message")
 	}
