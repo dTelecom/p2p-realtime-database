@@ -5,13 +5,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	logging "github.com/ipfs/go-log/v2"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	logging "github.com/ipfs/go-log/v2"
 
 	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -67,6 +68,18 @@ l:
 		}
 
 		switch fields[0] {
+		case "subscribe":
+			err = db.Subscribe(ctx, fields[1], func(event p2p_database.Event) {
+				fmt.Printf("Got subscription event %v", event)
+			})
+			if err != nil {
+				fmt.Printf("error %s\n", err)
+			}
+		case "publish":
+			err = db.Publish(ctx, fields[1], fields[2])
+			if err != nil {
+				fmt.Printf("error %s\n", err)
+			}
 		case "peers":
 			for _, p := range connectedPeers(db.GetHost()) {
 				logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())

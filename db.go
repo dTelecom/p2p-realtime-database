@@ -340,6 +340,9 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 
 			//skip self messages
 			if msg.ReceivedFrom == d.selfID {
+				if msg.Message != nil {
+					d.logger.Debugf("fetched message from self publish %s", string(msg.Message.Data))
+				}
 				continue
 			}
 

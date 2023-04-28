@@ -23,4 +23,6 @@ export ETHEREUM_CONTRACT_ADDRESS=0xa99885B0Ce9cE7C8B93c15bFc4deeAec419f2393
 > get key value
 > del key
 > list
+> subscribe <event>
+> publish <event> <value>
 ```
