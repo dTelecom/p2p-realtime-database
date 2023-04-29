@@ -14,7 +14,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 
-	p2p_database "github.com/dTelecom/p2p-database"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
