@@ -1,4 +1,4 @@
-module github.com/dTelecom/p2p-database
+module github.com/dTelecom/p2p-realtime-database
 
 go 1.19
 
