@@ -5,17 +5,19 @@ import (
 	"log"
 )
 
-type EnvConfig struct {
+type Config struct {
 	PeerListenPort          int    `env:"PEER_LISTEN_PORT"`
-	EthereumNetworkHost     string `env:"ETHEREUM_NETWORK_HOST,required"`
-	EthereumNetworkKey      string `env:"ETHEREUM_NETWORK_KEY,required"`
-	EthereumContractAddress string `env:"ETHEREUM_CONTRACT_ADDRESS,required"`
+	EthereumNetworkHost     string `env:"ETHEREUM_NETWORK_HOST"`
+	EthereumNetworkKey      string `env:"ETHEREUM_NETWORK_KEY"`
+	EthereumContractAddress string `env:"ETHEREUM_CONTRACT_ADDRESS"`
+	WalletPrivateKey        string `env:"WALLET_PRIVATE_KEY"`
+	DatabaseName            string `env:"DATABASE_NAME"`
 }
 
-var config = EnvConfig{}
+var EnvConfig = Config{}
 
 func init() {
-	err := env.Parse(&config)
+	err := env.Parse(&EnvConfig)
 	if err != nil {
 		log.Fatalf("try parse required env: %v", err)
 	}

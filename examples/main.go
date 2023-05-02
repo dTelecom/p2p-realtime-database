@@ -50,7 +50,11 @@ func main() {
 	logger := logging.Logger("db")
 	defer logger.Sync()
 
-	db, err := p2p_database.Connect(ctx, *ethPrivateKey, "chat", logger)
+	cfg := p2p_database.EnvConfig
+	cfg.DatabaseName = "chat"
+	cfg.WalletPrivateKey = *ethPrivateKey
+
+	db, err := p2p_database.Connect(ctx, cfg, logger)
 	if err != nil {
 		panic(err)
 	}

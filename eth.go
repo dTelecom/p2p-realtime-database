@@ -23,18 +23,18 @@ type EthSmartContract struct {
 	logger *logging.ZapEventLogger
 }
 
-func NewEthSmartContract(logger *logging.ZapEventLogger) (*EthSmartContract, error) {
-	networkHost := config.EthereumNetworkHost
+func NewEthSmartContract(conf Config, logger *logging.ZapEventLogger) (*EthSmartContract, error) {
+	networkHost := conf.EthereumNetworkHost
 	if !strings.HasSuffix(networkHost, "/") {
 		networkHost = networkHost + "/"
 	}
 
-	client, err := ethclient.Dial(networkHost + config.EthereumNetworkKey)
+	client, err := ethclient.Dial(networkHost + conf.EthereumNetworkKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "try dial eth network")
 	}
 
-	instance, err := contracts.NewDtelecom(common.HexToAddress(config.EthereumContractAddress), client)
+	instance, err := contracts.NewDtelecom(common.HexToAddress(conf.EthereumContractAddress), client)
 	if err != nil {
 		return nil, errors.Wrap(err, "create smart contract instance")
 	}
@@ -43,6 +43,15 @@ func NewEthSmartContract(logger *logging.ZapEventLogger) (*EthSmartContract, err
 		client: instance,
 		logger: logger,
 	}, nil
+}
+
+func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
+	client, err := e.client.ClientByAddress(nil, common.HexToAddress(address))
+	if err != nil {
+		fmt.Printf("try get key by address %s: %s", address, err)
+		return "", errors.Wrap(err, "try get client by address")
+	}
+	return client.Key, nil
 }
 
 func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
@@ -98,7 +107,7 @@ func (e *EthSmartContract) ValidatePeer(p peer.ID) (bool, error) {
 		return false, errors.Wrap(err, "get eth addr from peer")
 	}
 
-	n, err := e.client.NodeByAddress(nil, common.HexToAddress(ethAddr))
+	n, err := e.client.ClientByAddress(nil, common.HexToAddress(ethAddr))
 	if err != nil {
 		return false, errors.Wrap(err, "fetch node by key")
 	}

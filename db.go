@@ -77,8 +77,7 @@ type DB struct {
 
 func Connect(
 	ctx context.Context,
-	ethPrivateKey string,
-	name string,
+	config Config,
 	logger *logging.ZapEventLogger,
 	opts ...dht.Option,
 ) (*DB, error) {
@@ -87,16 +86,16 @@ func Connect(
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
 
-	ethSmartContract, err := NewEthSmartContract(logger)
+	ethSmartContract, err := NewEthSmartContract(config, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "create ethereum smart contract")
 	}
 
-	port := config.PeerListenPort
+	port := EnvConfig.PeerListenPort
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, kdht, err := makeHost(ctx, ethSmartContract, ethPrivateKey, port)
+	h, kdht, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
 	if err != nil {
 		return nil, errors.Wrap(err, "make libp2p host")
 	}
@@ -138,12 +137,12 @@ func Connect(
 		fmt.Printf("Removed: [%s]\n", k)
 	}
 
-	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+name)
+	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+config.DatabaseName)
 	if err != nil {
 		return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
 	}
 
-	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+name), ipfs, pubsubBC, crtdOpts)
+	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), ipfs, pubsubBC, crtdOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "init crdt")
 	}
@@ -153,7 +152,7 @@ func Connect(
 		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
-	netTopic, err := ps.Join(NetSubscriptionTopicPrefix + name)
+	netTopic, err := ps.Join(NetSubscriptionTopicPrefix + config.DatabaseName)
 	if err != nil {
 		return nil, errors.Wrap(err, "create net topic")
 	}
@@ -164,7 +163,7 @@ func Connect(
 	}
 
 	db := &DB{
-		Name:   name,
+		Name:   config.DatabaseName,
 		host:   h,
 		selfID: h.ID(),
 		logger: logger,
