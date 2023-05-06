@@ -222,7 +222,7 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 
 	val, err := d.crdt.Get(ctx, datastore.NewKey(key))
 	switch {
-	case strings.Contains(err.Error(), "key not found"):
+	case err != nil && strings.Contains(err.Error(), "key not found"):
 		return "", ErrKeyNotFound
 	case err != nil:
 		return "", errors.Wrap(err, "crdt get")
@@ -234,7 +234,7 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 func (d *DB) Remove(ctx context.Context, key string) error {
 	err := d.crdt.Delete(ctx, datastore.NewKey(key))
 	switch {
-	case strings.Contains(err.Error(), "key not found"):
+	case err != nil && strings.Contains(err.Error(), "key not found"):
 		return ErrKeyNotFound
 	case err != nil:
 		return errors.Wrap(err, "crdt delete")
