@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ const (
 
 var (
 	ErrEmptyKey                     = errors.New("empty key")
+	ErrKeyNotFound                  = errors.New("key not found")
 	ErrEthereumWalletNotRegistered  = errors.New("ethereum address not registered")
 	ErrIncorrectSubscriptionHandler = errors.New("incorrect subscription handler")
 )
@@ -219,7 +221,10 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 	}
 
 	val, err := d.crdt.Get(ctx, datastore.NewKey(key))
-	if err != nil {
+	switch {
+	case strings.Contains(err.Error(), "key not found"):
+		return "", ErrKeyNotFound
+	case err != nil:
 		return "", errors.Wrap(err, "crdt get")
 	}
 
@@ -228,8 +233,11 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 
 func (d *DB) Remove(ctx context.Context, key string) error {
 	err := d.crdt.Delete(ctx, datastore.NewKey(key))
-	if err != nil {
-		return errors.Wrap(err, "crdt delete key")
+	switch {
+	case strings.Contains(err.Error(), "key not found"):
+		return ErrKeyNotFound
+	case err != nil:
+		return errors.Wrap(err, "crdt delete")
 	}
 	return nil
 }
