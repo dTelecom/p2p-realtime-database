@@ -107,7 +107,7 @@ func (e *EthSmartContract) ValidatePeer(p peer.ID) (bool, error) {
 		return false, errors.Wrap(err, "get eth addr from peer")
 	}
 
-	n, err := e.client.ClientByAddress(nil, common.HexToAddress(ethAddr))
+	n, err := e.client.NodeByAddress(nil, common.HexToAddress(ethAddr))
 	if err != nil {
 		return false, errors.Wrap(err, "fetch node by key")
 	}
