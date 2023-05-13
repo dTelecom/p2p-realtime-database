@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +56,9 @@ type TopicSubscription struct {
 }
 
 type Event struct {
-	Message string
+	ID         string
+	FromPeerId string
+	Message    interface{}
 }
 
 type DB struct {
@@ -188,8 +191,8 @@ func Connect(
 	return db, nil
 }
 
-func (d *DB) List(ctx context.Context) ([]string, error) {
-	r, err := d.crdt.Query(ctx, query.Query{KeysOnly: true})
+func (db *DB) List(ctx context.Context) ([]string, error) {
+	r, err := db.crdt.Query(ctx, query.Query{KeysOnly: true})
 	if err != nil {
 		return nil, errors.Wrap(err, "crdt list query")
 	}
@@ -202,12 +205,12 @@ func (d *DB) List(ctx context.Context) ([]string, error) {
 	return keys, nil
 }
 
-func (d *DB) Set(ctx context.Context, key, value string) error {
+func (db *DB) Set(ctx context.Context, key, value string) error {
 	if len(key) == 0 {
 		return ErrEmptyKey
 	}
 
-	err := d.crdt.Put(ctx, datastore.NewKey(key), []byte(value))
+	err := db.crdt.Put(ctx, datastore.NewKey(key), []byte(value))
 	if err != nil {
 		return errors.Wrap(err, "crdt put")
 	}
@@ -215,12 +218,12 @@ func (d *DB) Set(ctx context.Context, key, value string) error {
 	return nil
 }
 
-func (d *DB) Get(ctx context.Context, key string) (string, error) {
+func (db *DB) Get(ctx context.Context, key string) (string, error) {
 	if len(key) == 0 {
 		return "", ErrEmptyKey
 	}
 
-	val, err := d.crdt.Get(ctx, datastore.NewKey(key))
+	val, err := db.crdt.Get(ctx, datastore.NewKey(key))
 	switch {
 	case err != nil && strings.Contains(err.Error(), "key not found"):
 		return "", ErrKeyNotFound
@@ -231,8 +234,8 @@ func (d *DB) Get(ctx context.Context, key string) (string, error) {
 	return string(val), nil
 }
 
-func (d *DB) Remove(ctx context.Context, key string) error {
-	err := d.crdt.Delete(ctx, datastore.NewKey(key))
+func (db *DB) Remove(ctx context.Context, key string) error {
+	err := db.crdt.Delete(ctx, datastore.NewKey(key))
 	switch {
 	case err != nil && strings.Contains(err.Error(), "key not found"):
 		return ErrKeyNotFound
@@ -242,8 +245,8 @@ func (d *DB) Remove(ctx context.Context, key string) error {
 	return nil
 }
 
-func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler, opts ...pubsub.TopicOpt) error {
-	t, err := d.joinTopic(topic, opts...)
+func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler, opts ...pubsub.TopicOpt) error {
+	t, err := db.joinTopic(topic, opts...)
 	if err != nil {
 		return err
 	}
@@ -257,18 +260,18 @@ func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler,
 		return ErrIncorrectSubscriptionHandler
 	}
 
-	d.lock.Lock()
-	d.topicSubscriptions[topic] = &TopicSubscription{
+	db.lock.Lock()
+	db.topicSubscriptions[topic] = &TopicSubscription{
 		subscription: s,
 		topic:        t,
 		handler:      handler,
 	}
-	d.lock.Unlock()
+	db.lock.Unlock()
 
-	d.handleGroup.Go(func() error {
-		err = d.listenEvents(ctx, d.topicSubscriptions[topic])
+	db.handleGroup.Go(func() error {
+		err = db.listenEvents(ctx, db.topicSubscriptions[topic])
 		if err != nil {
-			d.logger.Errorf("pub sub listen events topic %s err %s", topic, err)
+			db.logger.Errorf("pub sub listen events topic %s err %s", topic, err)
 		}
 		return err
 	})
@@ -276,81 +279,86 @@ func (d *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler,
 	return nil
 }
 
-func (d *DB) Publish(ctx context.Context, topic, value string, opts ...pubsub.PubOpt) error {
-	t, err := d.joinTopic(topic)
+func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts ...pubsub.PubOpt) (Event, error) {
+	t, err := db.joinTopic(topic)
 	if err != nil {
-		return err
+		return Event{}, err
 	}
 
-	marshaled, err := json.Marshal(Event{Message: value})
+	event := Event{
+		ID:         uuid.New().String(),
+		Message:    value,
+		FromPeerId: db.host.ID().String(),
+	}
+	marshaled, err := json.Marshal(event)
 	if err != nil {
-		return errors.Wrap(err, "try marshal message")
+		return Event{}, errors.Wrap(err, "try marshal message")
 	}
 
 	err = t.Publish(ctx, marshaled, opts...)
 	if err != nil {
-		return errors.Wrap(err, "pub sub publish message")
+		return Event{}, errors.Wrap(err, "pub sub publish message")
 	}
 
-	return nil
+	return event, nil
 }
 
-func (d *DB) Disconnect(ctx context.Context) error {
+func (db *DB) Disconnect(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return d.crdt.Close()
+		return db.crdt.Close()
 	})
 
 	g.Go(func() error {
-		d.lock.RLock()
-		for _, s := range d.topicSubscriptions {
+		db.lock.RLock()
+		for _, s := range db.topicSubscriptions {
 			s.subscription.Cancel()
 			err := s.topic.Close()
 			if err != nil {
-				d.logger.Errorf("try close db topic %s current peer id %s", s.topic, d.host.ID())
+				db.logger.Errorf("try close db topic %s current peer id %s", s.topic, db.host.ID())
 			}
 		}
-		d.lock.RUnlock()
+		db.lock.RUnlock()
 
 		return nil
 	})
 
 	g.Go(func() error {
-		return d.handleGroup.Wait()
+		return db.handleGroup.Wait()
 	})
 
 	return g.Wait()
 }
 
-func (d *DB) GetHost() host.Host {
-	return d.host
+func (db *DB) GetHost() host.Host {
+	return db.host
 }
 
-func (d *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
-	d.lock.Lock()
-	defer d.lock.Unlock()
+func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
+	db.lock.Lock()
+	defer db.lock.Unlock()
 
-	ts, ok := d.topicSubscriptions[topic]
+	ts, ok := db.topicSubscriptions[topic]
 	//already joined
 	if ok {
 		return ts.topic, nil
 	}
 
-	if t, ok := d.joinedTopics[topic]; ok {
+	if t, ok := db.joinedTopics[topic]; ok {
 		return t, nil
 	}
 
-	t, err := d.pubSub.Join(topic, opts...)
+	t, err := db.pubSub.Join(topic, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
-	d.joinedTopics[topic] = t
+	db.joinedTopics[topic] = t
 
 	return t, nil
 }
 
-func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) error {
+func (db *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -358,15 +366,15 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 		default:
 			msg, err := topicSub.subscription.Next(ctx)
 			if err != nil {
-				d.logger.Errorf("try get next pub sub message error: %s", err)
+				db.logger.Errorf("try get next pub sub message error: %s", err)
 
 				continue
 			}
 
 			//skip self messages
-			if msg.ReceivedFrom == d.selfID {
+			if msg.ReceivedFrom == db.selfID {
 				if msg.Message != nil {
-					d.logger.Debugf("fetched message from self publish %s", string(msg.Message.Data))
+					db.logger.Debugf("fetched message from self publish %s", string(msg.Message.Data))
 				}
 				continue
 			}
@@ -374,7 +382,7 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 			event := Event{}
 			err = json.Unmarshal(msg.Data, &event)
 			if err != nil {
-				d.logger.Errorf("try unmarshal pub sub message from %s error %s, data: %s", msg.ReceivedFrom, err, string(msg.Data))
+				db.logger.Errorf("try unmarshal pub sub message from %s error %s, data: %s", msg.ReceivedFrom, err, string(msg.Data))
 			}
 
 			topicSub.handler(event)
@@ -382,24 +390,24 @@ func (d *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) erro
 	}
 }
 
-func (d *DB) refreshPeers(ctx context.Context) {
+func (db *DB) refreshPeers(ctx context.Context) {
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				msg, err := d.netSubscription.Next(ctx)
+				msg, err := db.netSubscription.Next(ctx)
 				if err != nil {
-					d.logger.Errorf("try net subscription read next message: %s", err)
+					db.logger.Errorf("try net subscription read next message: %s", err)
 					continue
 				}
 
-				if msg.ReceivedFrom == d.host.ID() {
+				if msg.ReceivedFrom == db.host.ID() {
 					continue
 				}
 
-				d.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
+				db.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
 			}
 		}
 	}()
@@ -410,9 +418,9 @@ func (d *DB) refreshPeers(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			default:
-				err := d.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
+				err := db.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
 				if err != nil {
-					d.logger.Errorf("try publish message to net ps topic: %s", err)
+					db.logger.Errorf("try publish message to net ps topic: %s", err)
 				}
 				time.Sleep(20 * time.Second)
 			}

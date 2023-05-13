@@ -83,7 +83,7 @@ l:
 				fmt.Printf("error %s\n", err)
 			}
 		case "publish":
-			err = db.Publish(ctx, fields[1], fields[2])
+			_, err = db.Publish(ctx, fields[1], fields[2])
 			if err != nil {
 				fmt.Printf("error %s\n", err)
 			}
