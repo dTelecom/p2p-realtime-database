@@ -26,6 +26,8 @@ var (
 	loggingDebug   = flag.Bool("vvv", false, "debug mode")
 	loggingInfo    = flag.Bool("vv", false, "info mode")
 	loggingWarning = flag.Bool("v", false, "warning mode")
+
+	db *p2p_database.DB
 )
 
 func main() {
@@ -55,7 +57,8 @@ func main() {
 	cfg.WalletPrivateKey = *ethPrivateKey
 
 	var additionalDatabases = map[string]*p2p_database.DB{}
-	db, err := p2p_database.Connect(ctx, cfg, logger)
+	var err error
+	db, err = p2p_database.Connect(ctx, cfg, logger)
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +75,7 @@ l:
 		text := scanner.Text()
 		fields := strings.Fields(text)
 		if len(fields) == 0 {
-			fmt.Printf("> ")
+			fmt.Printf("[db %s] > ", db.Name)
 			continue
 		}
 
@@ -84,11 +87,11 @@ l:
 				cfg.DatabaseName = fields[1]
 				cfg.WalletPrivateKey = *ethPrivateKey
 				additionalDatabases[fields[1]], err = p2p_database.Connect(ctx, cfg, logger)
-				db = additionalDatabases[fields[1]]
 				if err != nil {
 					fmt.Printf("error connecting %s\n", err)
 				}
 			}
+			db = additionalDatabases[fields[1]]
 		case "subscribe":
 			err = db.Subscribe(ctx, fields[1], func(event p2p_database.Event) {
 				fmt.Printf("Got subscription event %v", event)
@@ -150,7 +153,7 @@ l:
 			if err != nil {
 				fmt.Printf("error get key %s %s\n", fields[1], err)
 			} else {
-				fmt.Printf("[%s] -> %s\n", fields[1], string(val))
+				fmt.Printf("[db %s] [%s] -> %s\n", db.String(), fields[1], string(val))
 			}
 		case "set":
 			if len(fields) < 3 {

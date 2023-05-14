@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	ipfs_datastore "github.com/ipfs/go-datastore/sync"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"strings"
@@ -21,7 +22,6 @@ import (
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/ipfs/go-datastore"
-	ipfs_datastore "github.com/ipfs/go-datastore/sync"
 	crdt "github.com/ipfs/go-ds-crdt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -48,11 +48,10 @@ var (
 )
 
 var (
-	onceInitHostP2P = sync.Once{}
-	globalHost      host.Host
-	globalDHT       *dual.DHT
-	globalIPFS      *ipfslite.Peer
-	globalDataStore datastore.Batching
+	onceInitHostP2P      = sync.Once{}
+	globalHost           host.Host
+	globalDHT            *dual.DHT
+	globalBootstrapNodes []peer.AddrInfo
 )
 
 type PubSubHandler func(Event)
@@ -108,10 +107,17 @@ func Connect(
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, _, ipfs, ds, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
+	h, dht, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
 	if err != nil {
 		return nil, errors.Wrap(err, "make libp2p host")
 	}
+
+	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
+	ipfs, err := ipfslite.New(ctx, ds, nil, h, dht, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "init ipfs")
+	}
+	ipfs.Bootstrap(globalBootstrapNodes)
 
 	valid, err := ethSmartContract.ValidatePeer(h.ID())
 	if err != nil {
@@ -185,6 +191,10 @@ func Connect(
 	db.refreshPeers(ctx)
 
 	return db, nil
+}
+
+func (db *DB) String() string {
+	return db.Name
 }
 
 func (db *DB) List(ctx context.Context) ([]string, error) {
@@ -424,21 +434,21 @@ func (db *DB) refreshPeers(ctx context.Context) {
 	}()
 }
 
-func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, *ipfslite.Peer, datastore.Batching, error) {
+func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, error) {
 	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
 	if err != nil {
-		return nil, nil, nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
+		return nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
 	}
 
 	privKeyBytes := eth_crypto.FromECDSA(prvKey)
 	priv, err := crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
 	if err != nil {
-		return nil, nil, nil, nil, errors.Wrap(err, "UnmarshalSecp256k1PrivateKey from eth private key")
+		return nil, nil, errors.Wrap(err, "UnmarshalSecp256k1PrivateKey from eth private key")
 	}
 
 	sourceMultiAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 	if err != nil {
-		return nil, nil, nil, nil, errors.Wrap(err, "create multi addr")
+		return nil, nil, errors.Wrap(err, "create multi addr")
 	}
 
 	var errSetupLibP2P error
@@ -463,22 +473,15 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 			return
 		}
 
-		bootstrapNodes, errSetupLibP2P := ethSmartContract.GetBoostrapNodes()
+		globalBootstrapNodes, errSetupLibP2P = ethSmartContract.GetBoostrapNodes()
 		if errSetupLibP2P != nil {
 			return
 		}
-
-		globalDataStore = ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
-		globalIPFS, errSetupLibP2P = ipfslite.New(ctx, globalDataStore, nil, globalHost, globalDHT, nil)
-		if errSetupLibP2P != nil {
-			return
-		}
-		globalIPFS.Bootstrap(bootstrapNodes)
 	})
 
 	if errSetupLibP2P != nil {
-		return nil, nil, nil, nil, errors.Wrap(errSetupLibP2P, "setup lib p2p")
+		return nil, nil, errors.Wrap(errSetupLibP2P, "setup lib p2p")
 	}
 
-	return globalHost, globalDHT, globalIPFS, globalDataStore, nil
+	return globalHost, globalDHT, nil
 }
