@@ -112,6 +112,11 @@ func Connect(
 		return nil, errors.Wrap(err, "make lib p2p host")
 	}
 
+	ps, err := pubsub.NewGossipSub(ctx, h)
+	if err != nil {
+		return nil, errors.Wrap(err, "create pubsub")
+	}
+
 	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
 	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
 	if err != nil {
@@ -131,11 +136,6 @@ func Connect(
 	}
 	if !valid {
 		return nil, ErrEthereumWalletNotRegistered
-	}
-
-	ps, err := pubsub.NewGossipSub(ctx, h)
-	if err != nil {
-		return nil, errors.Wrap(err, "create pubsub")
 	}
 
 	logging.SetLogLevel("globaldb", "debug")
