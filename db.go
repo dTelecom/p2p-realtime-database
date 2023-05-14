@@ -75,6 +75,7 @@ type DB struct {
 	crdt             *crdt.Datastore
 	ethSmartContract *EthSmartContract
 
+	ds                 datastore.Batching
 	pubSub             *pubsub.PubSub
 	joinedTopics       map[string]*pubsub.Topic
 	topicSubscriptions map[string]*TopicSubscription
@@ -125,8 +126,7 @@ func Connect(
 	ipfs.Bootstrap(globalBootstrapNodes)
 
 	for i, bootstrapNode := range globalBootstrapNodes {
-		log := fmt.Sprintf("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
-		fmt.Printf(log)
+		logger.Infof("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
 	}
 
@@ -181,6 +181,7 @@ func Connect(
 		selfID: h.ID(),
 		logger: logger,
 
+		ds:               datastoreCrdt,
 		ethSmartContract: ethSmartContract,
 		crdt:             datastoreCrdt,
 
@@ -316,12 +317,41 @@ func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts
 }
 
 func (db *DB) Disconnect(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return db.crdt.Close()
+		return db.handleGroup.Wait()
 	})
-
+	g.Go(func() error {
+		err := db.ds.Close()
+		if err != nil {
+			return errors.Wrap(err, "datastore close")
+		}
+		return nil
+	})
+	g.Go(func() error {
+		err := db.crdt.Close()
+		if err != nil {
+			return errors.Wrap(err, "crdt close")
+		}
+		return nil
+	})
+	g.Go(func() error {
+		err := db.host.Close()
+		if err != nil {
+			return errors.Wrap(err, "host close")
+		}
+		return nil
+	})
+	g.Go(func() error {
+		err := globalDHT.Close()
+		if err != nil {
+			return errors.Wrap(err, "globalDHT close")
+		}
+		return nil
+	})
 	g.Go(func() error {
 		db.lock.RLock()
 		for _, s := range db.topicSubscriptions {
@@ -332,12 +362,7 @@ func (db *DB) Disconnect(ctx context.Context) error {
 			}
 		}
 		db.lock.RUnlock()
-
 		return nil
-	})
-
-	g.Go(func() error {
-		return db.handleGroup.Wait()
 	})
 
 	return g.Wait()
