@@ -85,7 +85,8 @@ type DB struct {
 	netTopic        *pubsub.Topic
 	netSubscription *pubsub.Subscription
 
-	logger *logging.ZapEventLogger
+	disconnectOnce sync.Once
+	logger         *logging.ZapEventLogger
 }
 
 func Connect(
@@ -118,6 +119,11 @@ func Connect(
 		return nil, errors.Wrap(err, "create pubsub")
 	}
 
+	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+config.DatabaseName)
+	if err != nil {
+		return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
+	}
+
 	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
 	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
 	if err != nil {
@@ -148,11 +154,6 @@ func Connect(
 	}
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
-	}
-
-	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+config.DatabaseName)
-	if err != nil {
-		return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
 	}
 
 	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), ipfs, pubsubBC, crtdOpts)
@@ -193,9 +194,17 @@ func Connect(
 
 		netTopic:        netTopic,
 		netSubscription: netSubscription,
-	}
 
+		disconnectOnce: sync.Once{},
+	}
 	db.refreshPeers(ctx)
+
+	go func() {
+		<-ctx.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		db.Disconnect(ctx)
+	}()
 
 	return db, nil
 }
@@ -317,6 +326,14 @@ func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts
 }
 
 func (db *DB) Disconnect(ctx context.Context) error {
+	var err error
+	db.disconnectOnce.Do(func() {
+		err = db.disconnect(ctx)
+	})
+	return err
+}
+
+func (db *DB) disconnect(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
