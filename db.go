@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/host"
 	"strings"
 	"sync"
 	"time"
@@ -21,10 +23,8 @@ import (
 	"github.com/ipfs/go-datastore"
 	ipfs_datastore "github.com/ipfs/go-datastore/sync"
 	crdt "github.com/ipfs/go-ds-crdt"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -45,6 +45,12 @@ var (
 	ErrKeyNotFound                  = errors.New("key not found")
 	ErrEthereumWalletNotRegistered  = errors.New("ethereum address not registered")
 	ErrIncorrectSubscriptionHandler = errors.New("incorrect subscription handler")
+)
+
+var (
+	onceInitHostP2P = sync.Once{}
+	globalHost      host.Host
+	globalDHT       *dual.DHT
 )
 
 type PubSubHandler func(Event)
@@ -445,20 +451,29 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		return nil, nil, errors.Wrap(err, "create multi addr")
 	}
 
-	opts := ipfslite.Libp2pOptionsExtra
-	opts = append(
-		opts,
-		libp2p.ConnectionGater(
-			NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
-		),
-	)
+	var errSetupLibP2P error
+	onceInitHostP2P.Do(func() {
+		opts := ipfslite.Libp2pOptionsExtra
+		opts = append(
+			opts,
+			libp2p.ConnectionGater(
+				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+			),
+		)
 
-	return ipfslite.SetupLibp2p(
-		ctx,
-		priv,
-		nil,
-		[]multiaddr.Multiaddr{sourceMultiAddr},
-		nil,
-		opts...,
-	)
+		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
+			ctx,
+			priv,
+			nil,
+			[]multiaddr.Multiaddr{sourceMultiAddr},
+			nil,
+			opts...,
+		)
+	})
+
+	if errSetupLibP2P != nil {
+		return nil, nil, errors.Wrap(errSetupLibP2P, "setup lib p2p")
+	}
+
+	return globalHost, globalDHT, nil
 }
