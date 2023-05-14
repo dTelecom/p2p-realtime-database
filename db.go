@@ -469,7 +469,7 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		}
 
 		globalDataStore = ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
-		globalIPFS, errSetupLibP2P := ipfslite.New(ctx, globalDataStore, nil, globalHost, globalDHT, nil)
+		globalIPFS, errSetupLibP2P = ipfslite.New(ctx, globalDataStore, nil, globalHost, globalDHT, nil)
 		if errSetupLibP2P != nil {
 			return
 		}
