@@ -106,7 +106,7 @@ l:
 			}
 		case "peers":
 			for _, p := range connectedPeers(db.GetHost()) {
-				logging.Logger("cli").Infof("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
+				fmt.Printf("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
 			}
 		case "debug":
 			switch fields[1] {

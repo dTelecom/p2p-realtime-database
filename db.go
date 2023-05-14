@@ -107,17 +107,23 @@ func Connect(
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, dht, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
+	h, kdht, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
 	if err != nil {
-		return nil, errors.Wrap(err, "make libp2p host")
+		return nil, errors.Wrap(err, "make lib p2p host")
 	}
 
 	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
-	ipfs, err := ipfslite.New(ctx, ds, nil, h, dht, nil)
+	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
 	}
 	ipfs.Bootstrap(globalBootstrapNodes)
+
+	for i, bootstrapNode := range globalBootstrapNodes {
+		log := fmt.Sprintf("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
+		fmt.Printf(log)
+		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
+	}
 
 	valid, err := ethSmartContract.ValidatePeer(h.ID())
 	if err != nil {
