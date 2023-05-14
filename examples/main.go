@@ -54,10 +54,12 @@ func main() {
 	cfg.DatabaseName = "chat"
 	cfg.WalletPrivateKey = *ethPrivateKey
 
+	var additionalDatabases = map[string]*p2p_database.DB{}
 	db, err := p2p_database.Connect(ctx, cfg, logger)
 	if err != nil {
 		panic(err)
 	}
+	additionalDatabases["chat"] = db
 
 	h := db.GetHost()
 	fmt.Printf("Peer id %s\n", h.ID().String())
@@ -75,6 +77,18 @@ l:
 		}
 
 		switch fields[0] {
+		case "connect":
+			_, alreadyExists := additionalDatabases[fields[1]]
+			if !alreadyExists {
+				cfg := p2p_database.EnvConfig
+				cfg.DatabaseName = fields[1]
+				cfg.WalletPrivateKey = *ethPrivateKey
+				additionalDatabases[fields[1]], err = p2p_database.Connect(ctx, cfg, logger)
+				db = additionalDatabases[fields[1]]
+				if err != nil {
+					fmt.Printf("error connecting %s\n", err)
+				}
+			}
 		case "subscribe":
 			err = db.Subscribe(ctx, fields[1], func(event p2p_database.Event) {
 				fmt.Printf("Got subscription event %v", event)
