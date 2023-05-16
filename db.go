@@ -48,10 +48,18 @@ var (
 )
 
 var (
-	onceInitHostP2P      = sync.Once{}
-	globalHost           host.Host
-	globalDHT            *dual.DHT
-	globalBootstrapNodes []peer.AddrInfo
+	onceInitHostP2P = sync.Once{}
+	lock            = sync.RWMutex{}
+
+	globalPubSubCrdtBroadcasters = map[string]*crdt.PubSubBroadcaster{}
+	globalHost                   host.Host
+	globalDHT                    *dual.DHT
+	globalBootstrapNodes         []peer.AddrInfo
+	globalGossipSub              *pubsub.PubSub
+
+	globalDataStorePerDb          = map[string]datastore.Batching{}
+	globalJoinedTopicsPerDb       = map[string]map[string]*pubsub.Topic{}
+	globalTopicSubscriptionsPerDb = map[string]map[string]*TopicSubscription{}
 )
 
 type PubSubHandler func(Event)
@@ -75,15 +83,10 @@ type DB struct {
 	crdt             *crdt.Datastore
 	ethSmartContract *EthSmartContract
 
-	ds                 datastore.Batching
-	pubSub             *pubsub.PubSub
-	joinedTopics       map[string]*pubsub.Topic
-	topicSubscriptions map[string]*TopicSubscription
-	handleGroup        *errgroup.Group
-	lock               sync.RWMutex
-
-	netTopic        *pubsub.Topic
-	netSubscription *pubsub.Subscription
+	ds          datastore.Batching
+	pubSub      *pubsub.PubSub
+	handleGroup *errgroup.Group
+	lock        sync.RWMutex
 
 	disconnectOnce sync.Once
 	logger         *logging.ZapEventLogger
@@ -114,17 +117,33 @@ func Connect(
 		return nil, errors.Wrap(err, "make lib p2p host")
 	}
 
-	ps, err := pubsub.NewGossipSub(ctx, h)
-	if err != nil {
-		return nil, errors.Wrap(err, "create pubsub")
+	pubsubTopic := "crdt_" + config.DatabaseName
+
+	lock.RLock()
+	pubsubBC, exists := globalPubSubCrdtBroadcasters[pubsubTopic]
+	lock.RUnlock()
+
+	if !exists {
+		lock.Lock()
+		pubsubBC, err = crdt.NewPubSubBroadcaster(ctx, globalGossipSub, pubsubTopic)
+		if err != nil && !strings.Contains(err.Error(), "topic already exists") {
+			return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
+		}
+		globalPubSubCrdtBroadcasters[pubsubTopic] = pubsubBC
+		lock.Unlock()
 	}
 
-	pubsubBC, err := crdt.NewPubSubBroadcaster(ctx, ps, "crdt_"+config.DatabaseName)
-	if err != nil {
-		return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
+	lock.RLock()
+	ds, exists := globalDataStorePerDb[config.DatabaseName]
+	lock.RUnlock()
+
+	if !exists {
+		lock.Lock()
+		ds = ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
+		globalDataStorePerDb[config.DatabaseName] = ds
+		lock.Unlock()
 	}
 
-	ds := ipfs_datastore.MutexWrap(datastore.NewMapDatastore())
 	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
@@ -166,15 +185,16 @@ func Connect(
 		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
-	netTopic, err := ps.Join(NetSubscriptionTopicPrefix + config.DatabaseName)
-	if err != nil {
-		return nil, errors.Wrap(err, "create net topic")
+	lock.Lock()
+	_, ok := globalJoinedTopicsPerDb[config.DatabaseName]
+	if !ok {
+		globalJoinedTopicsPerDb[config.DatabaseName] = map[string]*pubsub.Topic{}
 	}
-
-	netSubscription, err := netTopic.Subscribe()
-	if err != nil {
-		return nil, errors.Wrap(err, "subscribe to net topic")
+	_, ok = globalTopicSubscriptionsPerDb[config.DatabaseName]
+	if !ok {
+		globalTopicSubscriptionsPerDb[config.DatabaseName] = map[string]*TopicSubscription{}
 	}
+	lock.Unlock()
 
 	db := &DB{
 		Name:   config.DatabaseName,
@@ -186,18 +206,27 @@ func Connect(
 		ethSmartContract: ethSmartContract,
 		crdt:             datastoreCrdt,
 
-		pubSub:             ps,
-		topicSubscriptions: map[string]*TopicSubscription{},
-		joinedTopics:       map[string]*pubsub.Topic{},
-		handleGroup:        grp,
-		lock:               sync.RWMutex{},
-
-		netTopic:        netTopic,
-		netSubscription: netSubscription,
+		pubSub:      globalGossipSub,
+		handleGroup: grp,
+		lock:        sync.RWMutex{},
 
 		disconnectOnce: sync.Once{},
 	}
-	db.refreshPeers(ctx)
+
+	db.Subscribe(ctx, NetSubscriptionTopicPrefix+config.DatabaseName, func(event Event) {
+		peerId, err := peer.Decode(event.FromPeerId)
+		if err != nil {
+			db.logger.Errorf("net topic parse peer %s error: %w", event.FromPeerId, err)
+			return
+		}
+
+		if event.FromPeerId == db.host.ID().String() {
+			return
+		}
+
+		db.host.ConnManager().TagPeer(peerId, "keep", 100)
+	})
+	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
 
 	go func() {
 		<-ctx.Done()
@@ -282,16 +311,16 @@ func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler
 		return ErrIncorrectSubscriptionHandler
 	}
 
-	db.lock.Lock()
-	db.topicSubscriptions[topic] = &TopicSubscription{
+	lock.Lock()
+	globalTopicSubscriptionsPerDb[db.Name][topic] = &TopicSubscription{
 		subscription: s,
 		topic:        t,
 		handler:      handler,
 	}
-	db.lock.Unlock()
+	lock.Unlock()
 
 	db.handleGroup.Go(func() error {
-		err = db.listenEvents(ctx, db.topicSubscriptions[topic])
+		err = db.listenEvents(ctx, globalTopicSubscriptionsPerDb[db.Name][topic])
 		if err != nil {
 			db.logger.Errorf("pub sub listen events topic %s err %s", topic, err)
 		}
@@ -370,15 +399,17 @@ func (db *DB) disconnect(ctx context.Context) error {
 		return nil
 	})
 	g.Go(func() error {
-		db.lock.RLock()
-		for _, s := range db.topicSubscriptions {
+		lock.Lock()
+		defer lock.Unlock()
+
+		for k, s := range globalTopicSubscriptionsPerDb[db.Name] {
 			s.subscription.Cancel()
 			err := s.topic.Close()
 			if err != nil {
 				db.logger.Errorf("try close db topic %s current peer id %s", s.topic, db.host.ID())
 			}
+			delete(globalTopicSubscriptionsPerDb, k)
 		}
-		db.lock.RUnlock()
 		return nil
 	})
 
@@ -393,21 +424,25 @@ func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, e
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
-	ts, ok := db.topicSubscriptions[topic]
+	lock.RLock()
+	ts, ok := globalTopicSubscriptionsPerDb[db.Name][topic]
 	//already joined
 	if ok {
 		return ts.topic, nil
 	}
 
-	if t, ok := db.joinedTopics[topic]; ok {
+	if t, ok := globalJoinedTopicsPerDb[db.Name][topic]; ok {
 		return t, nil
 	}
+	lock.RUnlock()
 
+	lock.Lock()
 	t, err := db.pubSub.Join(topic, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
-	db.joinedTopics[topic] = t
+	globalJoinedTopicsPerDb[db.Name][topic] = t
+	lock.Unlock()
 
 	return t, nil
 }
@@ -444,35 +479,14 @@ func (db *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) err
 	}
 }
 
-func (db *DB) refreshPeers(ctx context.Context) {
+func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				msg, err := db.netSubscription.Next(ctx)
-				if err != nil {
-					db.logger.Errorf("try net subscription read next message: %s", err)
-					continue
-				}
-
-				if msg.ReceivedFrom == db.host.ID() {
-					continue
-				}
-
-				db.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				err := db.netTopic.Publish(ctx, []byte(NetSubscriptionPublishValue))
+				_, err := db.Publish(ctx, netTopic, []byte(NetSubscriptionPublishValue))
 				if err != nil {
 					db.logger.Errorf("try publish message to net ps topic: %s", err)
 				}
@@ -518,6 +532,11 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 			opts...,
 		)
 		if errSetupLibP2P != nil {
+			return
+		}
+
+		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(ctx, globalHost)
+		if err != nil {
 			return
 		}
 
