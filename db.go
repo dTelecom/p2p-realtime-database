@@ -148,6 +148,11 @@ func Connect(
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
 	}
+
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
+	inf, err := peer.AddrInfoFromP2pAddr(bstr)
+	globalBootstrapNodes = append(globalBootstrapNodes, *inf)
+
 	ipfs.Bootstrap(globalBootstrapNodes)
 
 	for i, bootstrapNode := range globalBootstrapNodes {
@@ -167,10 +172,14 @@ func Connect(
 
 	crtdOpts := crdt.DefaultOptions()
 	crtdOpts.Logger = logging.Logger("globaldb")
-	crtdOpts.RebroadcastInterval = RebroadcastingInterval
+	//crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
+		if k.String() == "/secret" {
+			panic("")
+		}
 		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
 	}
+	crtdOpts.NumWorkers = 30
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
 	}
@@ -421,10 +430,9 @@ func (db *DB) GetHost() host.Host {
 }
 
 func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
 
-	lock.RLock()
 	ts, ok := globalTopicSubscriptionsPerDb[db.Name][topic]
 	//already joined
 	if ok {
@@ -434,15 +442,12 @@ func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, e
 	if t, ok := globalJoinedTopicsPerDb[db.Name][topic]; ok {
 		return t, nil
 	}
-	lock.RUnlock()
 
-	lock.Lock()
 	t, err := db.pubSub.Join(topic, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
 	globalJoinedTopicsPerDb[db.Name][topic] = t
-	lock.Unlock()
 
 	return t, nil
 }
