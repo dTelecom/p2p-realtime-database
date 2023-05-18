@@ -149,10 +149,10 @@ func Connect(
 		return nil, errors.Wrap(err, "init ipfs")
 	}
 
-	globalBootstrapNodes = []peer.AddrInfo{}
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
-	inf, err := peer.AddrInfoFromP2pAddr(bstr)
-	globalBootstrapNodes = append(globalBootstrapNodes, *inf)
+	//globalBootstrapNodes = []peer.AddrInfo{}
+	//bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
+	//inf, err := peer.AddrInfoFromP2pAddr(bstr)
+	//globalBootstrapNodes = append(globalBootstrapNodes, *inf)
 
 	ipfs.Bootstrap(globalBootstrapNodes)
 
