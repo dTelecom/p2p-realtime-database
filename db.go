@@ -144,12 +144,13 @@ func Connect(
 		lock.Unlock()
 	}
 
-	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, nil)
+	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, &ipfslite.Config{ReprovideInterval: time.Second})
 	if err != nil {
 		return nil, errors.Wrap(err, "init ipfs")
 	}
 
-	bstr, _ := multiaddr.NewMultiaddr("/ip4/162.55.89.211/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
+	globalBootstrapNodes = []peer.AddrInfo{}
+	bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
 	inf, err := peer.AddrInfoFromP2pAddr(bstr)
 	globalBootstrapNodes = append(globalBootstrapNodes, *inf)
 
@@ -179,10 +180,10 @@ func Connect(
 		}
 		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
 	}
-	crtdOpts.NumWorkers = 30
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
 	}
+	crtdOpts.RebroadcastInterval = time.Second
 
 	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), ipfs, pubsubBC, crtdOpts)
 	if err != nil {
