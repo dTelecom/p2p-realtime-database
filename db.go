@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/google/uuid"
 	ipfs_datastore "github.com/ipfs/go-datastore/sync"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
-	"strings"
-	"sync"
-	"time"
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p"
@@ -57,6 +58,11 @@ var (
 	globalBootstrapNodes         []peer.AddrInfo
 	globalGossipSub              *pubsub.PubSub
 
+	globalLockIPFS  = sync.RWMutex{}
+	onceInitIPFS    = sync.Once{}
+	globalReadyIPFS bool
+	globalIPFs      *ipfslite.Peer
+
 	globalDataStorePerDb          = map[string]datastore.Batching{}
 	globalJoinedTopicsPerDb       = map[string]map[string]*pubsub.Topic{}
 	globalTopicSubscriptionsPerDb = map[string]map[string]*TopicSubscription{}
@@ -88,8 +94,10 @@ type DB struct {
 	handleGroup *errgroup.Group
 	lock        sync.RWMutex
 
-	disconnectOnce sync.Once
-	logger         *logging.ZapEventLogger
+	ready             bool
+	readyDatabaseLock sync.Mutex
+	disconnectOnce    sync.Once
+	logger            *logging.ZapEventLogger
 }
 
 func Connect(
@@ -112,7 +120,7 @@ func Connect(
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, kdht, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
+	h, _, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
 	if err != nil {
 		return nil, errors.Wrap(err, "make lib p2p host")
 	}
@@ -144,18 +152,6 @@ func Connect(
 		lock.Unlock()
 	}
 
-	ipfs, err := ipfslite.New(ctx, ds, nil, h, kdht, &ipfslite.Config{ReprovideInterval: time.Second})
-	if err != nil {
-		return nil, errors.Wrap(err, "init ipfs")
-	}
-
-	//globalBootstrapNodes = []peer.AddrInfo{}
-	//bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
-	//inf, err := peer.AddrInfoFromP2pAddr(bstr)
-	//globalBootstrapNodes = append(globalBootstrapNodes, *inf)
-
-	ipfs.Bootstrap(globalBootstrapNodes)
-
 	for i, bootstrapNode := range globalBootstrapNodes {
 		logger.Infof("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
@@ -185,7 +181,12 @@ func Connect(
 	}
 	crtdOpts.RebroadcastInterval = time.Second
 
-	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), ipfs, pubsubBC, crtdOpts)
+	doneBootstrappingIPFS, err := makeIPFS(ctx, ds, h)
+	if err != nil {
+		return nil, err
+	}
+
+	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), globalIPFs, pubsubBC, crtdOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "init crdt")
 	}
@@ -220,8 +221,25 @@ func Connect(
 		handleGroup: grp,
 		lock:        sync.RWMutex{},
 
-		disconnectOnce: sync.Once{},
+		readyDatabaseLock: sync.Mutex{},
+		disconnectOnce:    sync.Once{},
 	}
+
+	globalLockIPFS.RLock()
+	if !globalReadyIPFS {
+		//Unlock db after successfully bootstrapping IPFS
+		db.readyDatabaseLock.Lock()
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-doneBootstrappingIPFS:
+				db.readyDatabaseLock.Unlock()
+				return
+			}
+		}()
+	}
+	globalLockIPFS.RUnlock()
 
 	db.Subscribe(ctx, NetSubscriptionTopicPrefix+config.DatabaseName, func(event Event) {
 		peerId, err := peer.Decode(event.FromPeerId)
@@ -253,6 +271,8 @@ func (db *DB) String() string {
 }
 
 func (db *DB) List(ctx context.Context) ([]string, error) {
+	db.WaitReady(ctx)
+
 	r, err := db.crdt.Query(ctx, query.Query{KeysOnly: true})
 	if err != nil {
 		return nil, errors.Wrap(err, "crdt list query")
@@ -267,6 +287,8 @@ func (db *DB) List(ctx context.Context) ([]string, error) {
 }
 
 func (db *DB) Set(ctx context.Context, key, value string) error {
+	db.WaitReady(ctx)
+
 	if len(key) == 0 {
 		return ErrEmptyKey
 	}
@@ -280,6 +302,8 @@ func (db *DB) Set(ctx context.Context, key, value string) error {
 }
 
 func (db *DB) Get(ctx context.Context, key string) (string, error) {
+	db.WaitReady(ctx)
+
 	if len(key) == 0 {
 		return "", ErrEmptyKey
 	}
@@ -296,6 +320,8 @@ func (db *DB) Get(ctx context.Context, key string) (string, error) {
 }
 
 func (db *DB) Remove(ctx context.Context, key string) error {
+	db.WaitReady(ctx)
+
 	err := db.crdt.Delete(ctx, datastore.NewKey(key))
 	switch {
 	case err != nil && strings.Contains(err.Error(), "key not found"):
@@ -307,6 +333,8 @@ func (db *DB) Remove(ctx context.Context, key string) error {
 }
 
 func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler, opts ...pubsub.TopicOpt) error {
+	db.WaitReady(ctx)
+
 	t, err := db.joinTopic(topic, opts...)
 	if err != nil {
 		return err
@@ -341,6 +369,8 @@ func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler
 }
 
 func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts ...pubsub.PubOpt) (Event, error) {
+	db.WaitReady(ctx)
+
 	t, err := db.joinTopic(topic)
 	if err != nil {
 		return Event{}, err
@@ -502,6 +532,16 @@ func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 	}()
 }
 
+func (db *DB) WaitReady(ctx context.Context) {
+	if db.ready || globalReadyIPFS {
+		return
+	}
+
+	db.readyDatabaseLock.Lock()
+	db.ready = true
+	db.readyDatabaseLock.Unlock()
+}
+
 func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, error) {
 	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
 	if err != nil {
@@ -557,4 +597,30 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 	}
 
 	return globalHost, globalDHT, nil
+}
+
+func makeIPFS(ctx context.Context, ds datastore.Batching, h host.Host) (chan struct{}, error) {
+	var (
+		err               error
+		doneBootstrapping = make(chan struct{}, 1)
+	)
+
+	onceInitIPFS.Do(func() {
+		globalIPFs, err = ipfslite.New(ctx, ds, nil, h, globalDHT, &ipfslite.Config{ReprovideInterval: time.Second})
+		go func() {
+			globalBootstrapNodes = []peer.AddrInfo{}
+			bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
+			inf, _ := peer.AddrInfoFromP2pAddr(bstr)
+			globalBootstrapNodes = append(globalBootstrapNodes, *inf)
+
+			globalIPFs.Bootstrap(globalBootstrapNodes)
+
+			doneBootstrapping <- struct{}{}
+			globalLockIPFS.Lock()
+			globalReadyIPFS = true
+			globalLockIPFS.Unlock()
+		}()
+	})
+
+	return doneBootstrapping, errors.Wrap(err, "init ipfs")
 }
