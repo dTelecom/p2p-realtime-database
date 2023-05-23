@@ -411,16 +411,16 @@ func (db *DB) disconnect(ctx context.Context) error {
 		return db.handleGroup.Wait()
 	})
 	g.Go(func() error {
-		err := db.ds.Close()
+		err := db.crdt.Close()
 		if err != nil {
-			return errors.Wrap(err, "datastore close")
+			return errors.Wrap(err, "crdt close")
 		}
 		return nil
 	})
 	g.Go(func() error {
-		err := db.crdt.Close()
+		err := db.ds.Close()
 		if err != nil {
-			return errors.Wrap(err, "crdt close")
+			return errors.Wrap(err, "datastore close")
 		}
 		return nil
 	})
@@ -492,7 +492,9 @@ func (db *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) err
 			msg, err := topicSub.subscription.Next(ctx)
 			if err != nil {
 				db.logger.Errorf("try get next pub sub message error: %s", err)
-
+				if errors.Is(err, pubsub.ErrSubscriptionCancelled) {
+					return nil
+				}
 				continue
 			}
 
