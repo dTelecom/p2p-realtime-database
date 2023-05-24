@@ -474,7 +474,7 @@ func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, e
 		return t, nil
 	}
 
-	t, err := db.pubSub.Join(topic, opts...)
+	t, err := db.pubSub.Join(db.Name+"_"+topic, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
