@@ -14,7 +14,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/ipfs/go-datastore/query"
@@ -155,14 +154,6 @@ func Connect(
 	for i, bootstrapNode := range globalBootstrapNodes {
 		logger.Infof("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
-	}
-
-	valid, err := ethSmartContract.ValidatePeer(h.ID())
-	if err != nil {
-		return nil, errors.Wrap(err, "try validate current peer id in smart contract")
-	}
-	if !valid {
-		return nil, ErrEthereumWalletNotRegistered
 	}
 
 	logging.SetLogLevel("globaldb", "debug")
@@ -566,9 +557,10 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		opts := ipfslite.Libp2pOptionsExtra
 		opts = append(
 			opts,
-			libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
-			),
+			//todo temporary disable gate for testing
+			//libp2p.ConnectionGater(
+			//	NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+			//),
 		)
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
