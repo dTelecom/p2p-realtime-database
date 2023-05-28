@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -11,9 +15,6 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/multiformats/go-multiaddr"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	ipfs_datastore "github.com/ipfs/go-datastore/sync"
@@ -87,11 +88,10 @@ type Event struct {
 }
 
 type DB struct {
-	Name             string
-	selfID           peer.ID
-	host             host.Host
-	crdt             *crdt.Datastore
-	ethSmartContract *EthSmartContract
+	Name   string
+	selfID peer.ID
+	host   host.Host
+	crdt   *crdt.Datastore
 
 	ds          datastore.Batching
 	pubSub      *pubsub.PubSub
@@ -115,23 +115,17 @@ func Connect(
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
 
-	ethSmartContract, err := NewEthSmartContract(config, logger)
-	if err != nil {
-		return nil, errors.Wrap(err, "create ethereum smart contract")
-	}
-
 	port := EnvConfig.PeerListenPort
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, _, err := makeHost(ctx, ethSmartContract, config.WalletPrivateKey, port)
+	h, _, err := makeHost(ctx, config, port)
 	if err != nil {
 		return nil, errors.Wrap(err, "make lib p2p host")
 	}
 
-	pubsubTopic := "crdt_" + config.DatabaseName
-
 	lock.RLock()
+	pubsubTopic := "crdt_" + config.DatabaseName
 	pubsubBC, exists := globalPubSubCrdtBroadcasters[pubsubTopic]
 	lock.RUnlock()
 
@@ -209,9 +203,8 @@ func Connect(
 		selfID: h.ID(),
 		logger: logger,
 
-		ds:               datastoreCrdt,
-		ethSmartContract: ethSmartContract,
-		crdt:             datastoreCrdt,
+		ds:   datastoreCrdt,
+		crdt: datastoreCrdt,
 
 		pubSub:      globalGossipSub,
 		handleGroup: grp,
@@ -574,8 +567,13 @@ func (db *DB) startDiscovery(ctx context.Context) {
 	}()
 }
 
-func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, error) {
-	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
+func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DHT, error) {
+	ethSmartContract, err := NewEthSmartContract(config, logging.Logger("eth-smart-contract"))
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "create ethereum smart contract")
+	}
+
+	prvKey, err := eth_crypto.HexToECDSA(config.WalletPrivateKey)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
 	}
