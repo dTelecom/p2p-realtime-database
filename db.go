@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ipfs/go-datastore"
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
@@ -597,9 +596,9 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		opts = append(
 			opts,
 			//todo temporary disable gate for testing
-			libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
-			),
+			//libp2p.ConnectionGater(
+			//	NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+			//),
 		)
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
