@@ -4,6 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	"github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/multiformats/go-multiaddr"
 	"strings"
 	"sync"
 	"time"
@@ -14,14 +20,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/multiformats/go-multiaddr"
-
 	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
-	"github.com/ipfs/go-datastore"
 	crdt "github.com/ipfs/go-ds-crdt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -40,10 +43,11 @@ const (
 	NetSubscriptionPublishValue = "ping"
 )
 
+const DiscoveryTag = "p2p-database-discovery"
+
 var (
 	ErrEmptyKey                     = errors.New("empty key")
 	ErrKeyNotFound                  = errors.New("key not found")
-	ErrEthereumWalletNotRegistered  = errors.New("ethereum address not registered")
 	ErrIncorrectSubscriptionHandler = errors.New("incorrect subscription handler")
 )
 
@@ -243,9 +247,17 @@ func Connect(
 			return
 		}
 
+		if db.host.Network().Connectedness(peerId) != network.Connected {
+			_, err = db.host.Network().DialPeer(ctx, peerId)
+			if err != nil {
+				db.logger.Errorf("cannot dial peer %s: %s", peerId, err)
+			}
+		}
 		db.host.ConnManager().TagPeer(peerId, "keep", 100)
 	})
+
 	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
+	db.startDiscovery(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -416,20 +428,6 @@ func (db *DB) disconnect(ctx context.Context) error {
 		return nil
 	})
 	g.Go(func() error {
-		err := db.host.Close()
-		if err != nil {
-			return errors.Wrap(err, "host close")
-		}
-		return nil
-	})
-	g.Go(func() error {
-		err := globalDHT.Close()
-		if err != nil {
-			return errors.Wrap(err, "globalDHT close")
-		}
-		return nil
-	})
-	g.Go(func() error {
 		lock.Lock()
 		defer lock.Unlock()
 
@@ -535,6 +533,43 @@ func (db *DB) WaitReady(ctx context.Context) {
 	db.readyDatabaseLock.Unlock()
 }
 
+func (db *DB) startDiscovery(ctx context.Context) {
+	rendezvous := DiscoveryTag + "_" + db.Name
+	routingDiscovery := routing.NewRoutingDiscovery(globalDHT)
+	util.Advertise(ctx, routingDiscovery, rendezvous)
+
+	ticker := time.NewTicker(time.Second * 1)
+	defer ticker.Stop()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			peers, err := util.FindPeers(ctx, routingDiscovery, rendezvous)
+			if err != nil {
+				db.logger.Errorf("discrovery find peers error %s", err)
+				return
+			}
+			for _, p := range peers {
+				db.logger.Errorf("found peer %s", p.String())
+
+				if p.ID == db.host.ID() {
+					continue
+				}
+				if db.host.Network().Connectedness(p.ID) != network.Connected {
+					_, err = db.host.Network().DialPeer(ctx, p.ID)
+					if err != nil {
+						db.logger.Errorf("discrovery connected to peer error %s: %s", p.ID.String(), err)
+						continue
+					}
+					db.logger.Infof("discrovery connected to peer %s\n", p.ID.String())
+				}
+			}
+		}
+	}()
+}
+
 func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivateKey string, port int) (host.Host, *dual.DHT, error) {
 	prvKey, err := eth_crypto.HexToECDSA(ethPrivateKey)
 	if err != nil {
@@ -584,6 +619,11 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		if errSetupLibP2P != nil {
 			return
 		}
+
+		errSetupLibP2P = setupHostDiscovery(globalHost)
+		if errSetupLibP2P != nil {
+			return
+		}
 	})
 
 	if errSetupLibP2P != nil {
@@ -617,4 +657,21 @@ func makeIPFS(ctx context.Context, ds datastore.Batching, h host.Host) (chan str
 	})
 
 	return doneBootstrapping, errors.Wrap(err, "init ipfs")
+}
+
+type discoveryNotify struct {
+	h host.Host
+}
+
+func (n *discoveryNotify) HandlePeerFound(pi peer.AddrInfo) {
+	fmt.Printf("discovered new peer %s\n", pi.ID.String())
+	err := n.h.Connect(context.Background(), pi)
+	if err != nil {
+		fmt.Printf("error connecting to peer %s: %s\n", pi.ID.String(), err)
+	}
+}
+
+func setupHostDiscovery(h host.Host) error {
+	s := mdns.NewMdnsService(h, "", &discoveryNotify{h: h})
+	return s.Start()
 }
