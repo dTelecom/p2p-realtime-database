@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
@@ -247,12 +248,6 @@ func Connect(
 			return
 		}
 
-		if db.host.Network().Connectedness(peerId) != network.Connected {
-			_, err = db.host.Network().DialPeer(ctx, peerId)
-			if err != nil {
-				db.logger.Errorf("cannot dial peer %s: %s", peerId, err)
-			}
-		}
 		db.host.ConnManager().TagPeer(peerId, "keep", 100)
 	})
 
@@ -534,6 +529,14 @@ func (db *DB) WaitReady(ctx context.Context) {
 }
 
 func (db *DB) startDiscovery(ctx context.Context) {
+	db.WaitReady(ctx)
+
+	s := mdns.NewMdnsService(db.host, "database_"+db.Name, &discoveryNotify{h: db.host})
+	err := s.Start()
+	if err != nil {
+		db.logger.Errorf("try setup mdns service error: %s", err.Error())
+	}
+
 	rendezvous := DiscoveryTag + "_" + db.Name
 	routingDiscovery := routing.NewRoutingDiscovery(globalDHT)
 	util.Advertise(ctx, routingDiscovery, rendezvous)
@@ -557,6 +560,7 @@ func (db *DB) startDiscovery(ctx context.Context) {
 				if p.ID == db.host.ID() {
 					continue
 				}
+
 				if db.host.Network().Connectedness(p.ID) != network.Connected {
 					_, err = db.host.Network().DialPeer(ctx, p.ID)
 					if err != nil {
@@ -593,9 +597,9 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		opts = append(
 			opts,
 			//todo temporary disable gate for testing
-			//libp2p.ConnectionGater(
-			//	NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
-			//),
+			libp2p.ConnectionGater(
+				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+			),
 		)
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
@@ -616,11 +620,6 @@ func makeHost(ctx context.Context, ethSmartContract *EthSmartContract, ethPrivat
 		}
 
 		globalBootstrapNodes, errSetupLibP2P = ethSmartContract.GetBoostrapNodes()
-		if errSetupLibP2P != nil {
-			return
-		}
-
-		errSetupLibP2P = setupHostDiscovery(globalHost)
 		if errSetupLibP2P != nil {
 			return
 		}
@@ -664,14 +663,28 @@ type discoveryNotify struct {
 }
 
 func (n *discoveryNotify) HandlePeerFound(pi peer.AddrInfo) {
-	fmt.Printf("discovered new peer %s\n", pi.ID.String())
-	err := n.h.Connect(context.Background(), pi)
-	if err != nil {
-		fmt.Printf("error connecting to peer %s: %s\n", pi.ID.String(), err)
-	}
-}
+	l := logging.Logger("discovery-notifier")
 
-func setupHostDiscovery(h host.Host) error {
-	s := mdns.NewMdnsService(h, "", &discoveryNotify{h: h})
-	return s.Start()
+	l.Warnf("discovered new peer %s\n", pi.ID.String())
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			l.Errorf("error connecting to peer %s: timeout 1 hour", pi.ID.String())
+			return
+		default:
+			err := n.h.Connect(context.Background(), pi)
+			if err != nil {
+				l.Errorf("error connecting to peer %s: %s\n", pi.ID.String(), err)
+			} else {
+				l.Warnf("success connect to peer %s", pi.ID.String())
+				return
+			}
+
+			time.Sleep(1 * time.Second)
+		}
+	}
 }
