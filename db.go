@@ -97,6 +97,8 @@ type DB struct {
 	handleGroup *errgroup.Group
 	lock        sync.RWMutex
 
+	cancel context.CancelFunc
+
 	ready             bool
 	readyDatabaseLock sync.Mutex
 	disconnectOnce    sync.Once
@@ -109,6 +111,8 @@ func Connect(
 	logger *logging.ZapEventLogger,
 	opts ...dht.Option,
 ) (*DB, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
 	crypto.MinRsaKeyBits = 1024
 
 	grp := &errgroup.Group{}
@@ -130,7 +134,7 @@ func Connect(
 
 	if !exists {
 		lock.Lock()
-		pubsubBC, err = crdt.NewPubSubBroadcaster(ctx, globalGossipSub, pubsubTopic)
+		pubsubBC, err = crdt.NewPubSubBroadcaster(context.Background(), globalGossipSub, pubsubTopic)
 		if err != nil && !strings.Contains(err.Error(), "topic already exists") {
 			return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
 		}
@@ -202,8 +206,9 @@ func Connect(
 		selfID: h.ID(),
 		logger: logger,
 
-		ds:   datastoreCrdt,
 		crdt: datastoreCrdt,
+
+		cancel: cancel,
 
 		pubSub:      globalGossipSub,
 		handleGroup: grp,
@@ -387,49 +392,57 @@ func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts
 func (db *DB) Disconnect(ctx context.Context) error {
 	var err error
 	db.disconnectOnce.Do(func() {
+		db.cancel()
 		err = db.disconnect(ctx)
 	})
 	return err
 }
 
 func (db *DB) disconnect(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return db.handleGroup.Wait()
-	})
-	g.Go(func() error {
-		err := db.crdt.Close()
-		if err != nil {
-			return errors.Wrap(err, "crdt close")
-		}
-		return nil
-	})
-	g.Go(func() error {
-		err := db.ds.Close()
-		if err != nil {
-			return errors.Wrap(err, "datastore close")
-		}
-		return nil
-	})
-	g.Go(func() error {
 		lock.Lock()
 		defer lock.Unlock()
 
-		for k, s := range globalTopicSubscriptionsPerDb[db.Name] {
+		topics := globalTopicSubscriptionsPerDb[db.Name]
+		delete(globalTopicSubscriptionsPerDb, db.Name)
+		delete(globalJoinedTopicsPerDb, db.Name)
+
+		for _, s := range topics {
 			s.subscription.Cancel()
 			err := s.topic.Close()
 			if err != nil {
-				db.logger.Errorf("try close db topic %s current peer id %s", s.topic, db.host.ID())
+				db.logger.Errorf("try close db topic %s current peer id %s: %s", s.topic, db.host.ID(), err)
 			}
-			delete(globalTopicSubscriptionsPerDb[db.Name], k)
 		}
 		return nil
 	})
+	g.Go(func() error {
+		err := db.handleGroup.Wait()
+		return err
+	})
+	//g.Go(func() error {
+	//	err := db.crdt.Close()
+	//	if err != nil {
+	//		return errors.Wrap(err, "crdt close")
+	//	}
+	//	return nil
+	//})
 
-	return g.Wait()
+	ch := make(chan error, 1)
+	go func() {
+		ch <- g.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return errors.Wrap(ctx.Err(), "try close")
+	case err := <-ch:
+		return err
+	}
 }
 
 func (db *DB) GetHost() host.Host {
@@ -468,7 +481,7 @@ func (db *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) err
 			msg, err := topicSub.subscription.Next(ctx)
 			if err != nil {
 				db.logger.Errorf("try get next pub sub message error: %s", err)
-				if errors.Is(err, pubsub.ErrSubscriptionCancelled) {
+				if errors.Is(err, pubsub.ErrSubscriptionCancelled) || errors.Is(err, context.Canceled) {
 					return nil
 				}
 				continue
@@ -614,7 +627,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 			return
 		}
 
-		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(ctx, globalHost)
+		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
 			return
 		}
