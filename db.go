@@ -431,7 +431,7 @@ func (db *DB) disconnect(ctx context.Context) error {
 			if err != nil {
 				db.logger.Errorf("try close db topic %s current peer id %s", s.topic, db.host.ID())
 			}
-			delete(globalTopicSubscriptionsPerDb, k)
+			delete(globalTopicSubscriptionsPerDb[db.Name], k)
 		}
 		return nil
 	})
@@ -510,6 +510,9 @@ func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 				_, err := db.Publish(ctx, netTopic, []byte(NetSubscriptionPublishValue))
 				if err != nil {
 					db.logger.Errorf("try publish message to net ps topic: %s", err)
+					if errors.Is(err, pubsub.ErrTopicClosed) {
+						return
+					}
 				}
 				time.Sleep(20 * time.Second)
 			}
