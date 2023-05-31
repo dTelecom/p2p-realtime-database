@@ -92,6 +92,17 @@ l:
 				}
 			}
 			db = additionalDatabases[fields[1]]
+		case "disconnect":
+			_, alreadyExists := additionalDatabases[db.Name]
+			if !alreadyExists {
+				fmt.Printf("db not found")
+				return
+			}
+			err = db.Disconnect(context.Background())
+			if err != nil {
+				fmt.Printf("disconnect error: %v", err)
+			}
+			delete(additionalDatabases, db.Name)
 		case "subscribe":
 			err = db.Subscribe(ctx, fields[1], func(event p2p_database.Event) {
 				fmt.Printf("Got subscription event %v", event)

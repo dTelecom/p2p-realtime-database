@@ -616,7 +616,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		)
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
-			ctx,
+			context.Background(),
 			priv,
 			nil,
 			[]multiaddr.Multiaddr{sourceMultiAddr},
@@ -652,7 +652,7 @@ func makeIPFS(ctx context.Context, ds datastore.Batching, h host.Host) (chan str
 	)
 
 	onceInitIPFS.Do(func() {
-		globalIPFs, err = ipfslite.New(ctx, ds, nil, h, globalDHT, &ipfslite.Config{ReprovideInterval: time.Second})
+		globalIPFs, err = ipfslite.New(context.Background(), ds, nil, h, globalDHT, &ipfslite.Config{ReprovideInterval: time.Second})
 		go func() {
 			globalBootstrapNodes = []peer.AddrInfo{}
 			bstr, _ := multiaddr.NewMultiaddr("/ip4/178.63.123.96/tcp/3500/p2p/16Uiu2HAmKJTUywRaKxJ2g2trHby2GYVSvnQVUh4Jxc9fhH7UZkBY")
