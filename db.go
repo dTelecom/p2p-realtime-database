@@ -118,7 +118,7 @@ func Connect(
 	grp := &errgroup.Group{}
 	grp.SetLimit(DefaultDatabaseEventsBufferSize)
 
-	port := EnvConfig.PeerListenPort
+	port := config.PeerListenPort
 	if port == 0 {
 		port = DefaultPort
 	}
