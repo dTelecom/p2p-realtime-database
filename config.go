@@ -6,6 +6,7 @@ import (
 )
 
 type Config struct {
+	DisableGater            bool   `env:"DISABLE_GATER"`
 	PeerListenPort          int    `env:"PEER_LISTEN_PORT"`
 	EthereumNetworkHost     string `env:"ETHEREUM_NETWORK_HOST"`
 	EthereumNetworkKey      string `env:"ETHEREUM_NETWORK_KEY"`

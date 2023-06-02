@@ -32,16 +32,12 @@ func (e EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Mu
 }
 
 func (e EthConnectionGater) InterceptAccept(multiaddrs network.ConnMultiaddrs) (allow bool) {
-	//todo AddrInfoFromP2pAddr from /ip4/5.16.134.127/tcp/3500 error invalid p2p multiaddr
-
-	//a, err := peer.AddrInfoFromP2pAddr(multiaddrs.LocalMultiaddr())
-	//if err != nil {
-	//	e.logger.Warnf("AddrInfoFromP2pAddr from %s error %s", multiaddrs.RemoteMultiaddr(), err)
-	//	return false
-	//}
-	//return e.checkPeerId(a.ID, "InterceptAccept")
-
-	return true
+	a, err := peer.AddrInfoFromP2pAddr(multiaddrs.LocalMultiaddr())
+	if err != nil {
+		e.logger.Warnf("AddrInfoFromP2pAddr from %s error %s", multiaddrs.RemoteMultiaddr(), err)
+		return false
+	}
+	return e.checkPeerId(a.ID, "InterceptAccept")
 }
 
 func (e EthConnectionGater) InterceptSecured(direction network.Direction, id peer.ID, multiaddrs network.ConnMultiaddrs) (allow bool) {
@@ -53,6 +49,10 @@ func (e EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, re
 }
 
 func (e EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
+	if EnvConfig.DisableGater {
+		return true
+	}
+
 	r, err := e.contract.ValidatePeer(p)
 
 	if err != nil {
