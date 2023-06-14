@@ -38,7 +38,7 @@ const (
 	DefaultPort = 3500
 
 	DefaultDatabaseEventsBufferSize = 128
-	RebroadcastingInterval          = 1 * time.Second
+	RebroadcastingInterval          = 30 * time.Second
 
 	NetSubscriptionTopicPrefix  = "crdt_net_"
 	NetSubscriptionPublishValue = "ping"
@@ -124,6 +124,7 @@ func Connect(
 	}
 	h, _, err := makeHost(ctx, config, port)
 	if err != nil {
+		cancel()
 		return nil, errors.Wrap(err, "make lib p2p host")
 	}
 
@@ -136,6 +137,7 @@ func Connect(
 		lock.Lock()
 		pubsubBC, err = crdt.NewPubSubBroadcaster(context.Background(), globalGossipSub, pubsubTopic)
 		if err != nil && !strings.Contains(err.Error(), "topic already exists") {
+			cancel()
 			return nil, errors.Wrap(err, "init pub sub crdt broadcaster")
 		}
 		globalPubSubCrdtBroadcasters[pubsubTopic] = pubsubBC
@@ -158,34 +160,38 @@ func Connect(
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
 	}
 
-	logging.SetLogLevel("globaldb", "debug")
-
 	crtdOpts := crdt.DefaultOptions()
-	crtdOpts.Logger = logging.Logger("globaldb")
-	//crtdOpts.RebroadcastInterval = RebroadcastingInterval
+	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
+	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		if k.String() == "/secret" {
-			panic("")
-		}
 		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
+		if config.NewKeyCallback != nil {
+			config.NewKeyCallback(k.String())
+		}
 	}
 	crtdOpts.DeleteHook = func(k datastore.Key) {
 		fmt.Printf("Removed: [%s]\n", k)
+		if config.RemoveKeyCallback != nil {
+			config.RemoveKeyCallback(k.String())
+		}
 	}
 	crtdOpts.RebroadcastInterval = time.Second
 
 	doneBootstrappingIPFS, err := makeIPFS(ctx, ds, h)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), globalIPFs, pubsubBC, crtdOpts)
 	if err != nil {
+		cancel()
 		return nil, errors.Wrap(err, "init crdt")
 	}
 
 	err = datastoreCrdt.Sync(ctx, datastore.NewKey("/"))
 	if err != nil {
+		cancel()
 		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 

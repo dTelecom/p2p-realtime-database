@@ -13,6 +13,9 @@ type Config struct {
 	EthereumContractAddress string `env:"ETHEREUM_CONTRACT_ADDRESS"`
 	WalletPrivateKey        string `env:"WALLET_PRIVATE_KEY"`
 	DatabaseName            string `env:"DATABASE_NAME"`
+
+	NewKeyCallback    func(key string)
+	RemoveKeyCallback func(key string)
 }
 
 var EnvConfig = Config{}
