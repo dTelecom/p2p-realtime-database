@@ -45,10 +45,13 @@ func NewEthSmartContract(conf Config, logger *logging.ZapEventLogger) (*EthSmart
 	}, nil
 }
 
+func (e *EthSmartContract) GetEthereumClient() *contracts.Dtelecom {
+	return e.client
+}
+
 func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
 	client, err := e.client.ClientByAddress(nil, common.HexToAddress(address))
 	if err != nil {
-		fmt.Printf("try get key by address %s: %s", address, err)
 		return "", errors.Wrap(err, "try get client by address")
 	}
 	return client.Key, nil

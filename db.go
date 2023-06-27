@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/libp2p/go-libp2p"
 	"strings"
 	"sync"
 	"time"
@@ -613,13 +614,11 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 	var errSetupLibP2P error
 	onceInitHostP2P.Do(func() {
 		opts := ipfslite.Libp2pOptionsExtra
-		opts = append(
-			opts,
-			//todo temporary disable gate for testing
-			//libp2p.ConnectionGater(
-			//	NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
-			//),
-		)
+		if !config.DisableGater {
+			opts = append(opts, libp2p.ConnectionGater(
+				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+			))
+		}
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
 			context.Background(),
