@@ -46,10 +46,12 @@ func NewEthSmartContract(conf Config, logger *logging.ZapEventLogger) (*EthSmart
 }
 
 func (e *EthSmartContract) GetEthereumClient() *contracts.Dtelecom {
+	e.logger.Warn("call method GetEthereumClient")
 	return e.client
 }
 
 func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
+	e.logger.Warn("call method PublicKeyByAddress")
 	client, err := e.client.ClientByAddress(nil, common.HexToAddress(address))
 	if err != nil {
 		return "", errors.Wrap(err, "try get client by address")
@@ -58,6 +60,7 @@ func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
 }
 
 func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
+	e.logger.Warn("call method GetBoostrapNodes")
 	all, err := e.client.GetAllNode(nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "get all nodes info")
@@ -105,6 +108,7 @@ func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 }
 
 func (e *EthSmartContract) ValidatePeer(p peer.ID) (bool, error) {
+	e.logger.Warn("call method ValidatePeer")
 	ethAddr, err := e.getEthAddrFromPeer(p)
 	if err != nil {
 		return false, errors.Wrap(err, "get eth addr from peer")
@@ -119,6 +123,7 @@ func (e *EthSmartContract) ValidatePeer(p peer.ID) (bool, error) {
 }
 
 func (e *EthSmartContract) getEthAddrFromPeer(p peer.ID) (string, error) {
+	e.logger.Warn("call method getEthAddrFromPeer")
 	pubkey, err := p.ExtractPublicKey()
 	if err != nil {
 		return "", errors.Wrap(err, "extract pub key")
@@ -135,6 +140,7 @@ func (e *EthSmartContract) getEthAddrFromPeer(p peer.ID) (string, error) {
 }
 
 func (e *EthSmartContract) getPeerIdFromPublicKey(pk string) (string, error) {
+	e.logger.Warn("call method getPeerIdFromPublicKey")
 	pubKeyBytes, err := hexutil.Decode(pk)
 	if err != nil {
 		return "", errors.Wrap(err, "decode hex from pub key")
