@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/libp2p/go-libp2p"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/libp2p/go-libp2p"
 
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/network"
