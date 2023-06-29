@@ -77,7 +77,7 @@ func (e *EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
 		e.cache[method] = map[peer.ID]bool{}
 	}
 
-	e.logger.Errorf("call method %s with %s", method, p)
+	e.logger.Debugf("call method %s with %s", method, p)
 	r, err := e.contract.ValidatePeer(p)
 
 	if err != nil {
