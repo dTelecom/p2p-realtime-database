@@ -47,7 +47,7 @@ func (e EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
 	if EnvConfig.DisableGater {
 		return true
 	}
-	e.logger.Warnf("call method %s with %s", method, p)
+	e.logger.Errorf("call method %s with %s", method, p)
 
 	r, err := e.contract.ValidatePeer(p)
 
