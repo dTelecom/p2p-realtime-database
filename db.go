@@ -12,7 +12,6 @@ import (
 
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/multiformats/go-multiaddr"
@@ -547,12 +546,6 @@ func (db *DB) WaitReady(ctx context.Context) {
 func (db *DB) startDiscovery(ctx context.Context) {
 	db.WaitReady(ctx)
 
-	s := mdns.NewMdnsService(db.host, "database_"+db.Name, &discoveryNotify{h: db.host})
-	err := s.Start()
-	if err != nil {
-		db.logger.Errorf("try setup mdns service error: %s", err.Error())
-	}
-
 	rendezvous := DiscoveryTag + "_" + db.Name
 	routingDiscovery := routing.NewRoutingDiscovery(globalDHT)
 	util.Advertise(ctx, routingDiscovery, rendezvous)
@@ -670,35 +663,4 @@ func makeIPFS(ctx context.Context, ds datastore.Batching, h host.Host) (chan str
 	})
 
 	return doneBootstrapping, errors.Wrap(err, "init ipfs")
-}
-
-type discoveryNotify struct {
-	h host.Host
-}
-
-func (n *discoveryNotify) HandlePeerFound(pi peer.AddrInfo) {
-	l := logging.Logger("discovery-notifier")
-
-	l.Warnf("discovered new peer %s\n", pi.ID.String())
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			l.Errorf("error connecting to peer %s: timeout 1 hour", pi.ID.String())
-			return
-		default:
-			err := n.h.Connect(context.Background(), pi)
-			if err != nil {
-				l.Errorf("error connecting to peer %s: %s\n", pi.ID.String(), err)
-			} else {
-				l.Warnf("success connect to peer %s", pi.ID.String())
-				return
-			}
-
-			time.Sleep(1 * time.Second)
-		}
-	}
 }
