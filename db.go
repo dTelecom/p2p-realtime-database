@@ -43,6 +43,8 @@ const (
 
 	NetSubscriptionTopicPrefix  = "crdt_net_"
 	NetSubscriptionPublishValue = "ping"
+
+	TTLSubscribeTopicPrefix = "ttl_"
 )
 
 const DiscoveryTag = "p2p-database-discovery"
@@ -73,6 +75,11 @@ var (
 	globalTopicSubscriptionsPerDb = map[string]map[string]*TopicSubscription{}
 )
 
+type TTLMessage struct {
+	Key         string    `json:"key"`
+	RemoveAfter time.Time `json:"remove_after"`
+}
+
 type PubSubHandler func(Event)
 
 type TopicSubscription struct {
@@ -99,6 +106,9 @@ type DB struct {
 	lock        sync.RWMutex
 
 	cancel context.CancelFunc
+
+	ttlLock     sync.RWMutex
+	ttlMessages map[string]TTLMessage
 
 	ready             bool
 	readyDatabaseLock sync.Mutex
@@ -215,7 +225,9 @@ func Connect(
 
 		crdt: datastoreCrdt,
 
-		cancel: cancel,
+		cancel:      cancel,
+		ttlLock:     sync.RWMutex{},
+		ttlMessages: map[string]TTLMessage{},
 
 		pubSub:      globalGossipSub,
 		handleGroup: grp,
@@ -255,8 +267,24 @@ func Connect(
 		db.host.ConnManager().TagPeer(peerId, "keep", 100)
 	})
 
+	db.Subscribe(ctx, TTLSubscribeTopicPrefix+config.DatabaseName, func(event Event) {
+		body := event.Message.(string)
+		ttl := TTLMessage{}
+
+		err = json.Unmarshal([]byte(body), &ttl)
+		if err != nil {
+			logger.Errorw("ttl topic handler: unmarshal body to TTLMessage", err)
+			return
+		}
+
+		db.ttlLock.Lock()
+		db.ttlMessages[ttl.Key] = ttl
+		db.ttlLock.Unlock()
+	})
+
 	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
 	db.startDiscovery(ctx)
+	db.startCleanupExpiredTTLKeysProcess(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -528,6 +556,63 @@ func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 					}
 				}
 				time.Sleep(20 * time.Second)
+			}
+		}
+	}()
+}
+
+func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
+	ttlMessage := TTLMessage{
+		Key:         key,
+		RemoveAfter: time.Now().Add(ttl),
+	}
+
+	body, err := json.Marshal(ttl)
+	if err != nil {
+		return errors.Wrap(err, "marshal ttl message")
+	}
+
+	db.ttlLock.Lock()
+	db.ttlMessages[key] = ttlMessage
+	db.ttlLock.Unlock()
+
+	//notify another nodes about new ttl for key
+	_, err = db.Publish(ctx, TTLSubscribeTopicPrefix+db.Name, string(body))
+	if err != nil {
+		return errors.Wrap(err, "publish message")
+	}
+
+	return nil
+}
+
+func (db *DB) startCleanupExpiredTTLKeysProcess(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				var delayedKeysForDeletion []string
+
+				db.ttlLock.RLock()
+				for _, ttl := range db.ttlMessages {
+					if time.Now().After(ttl.RemoveAfter) || time.Now().Equal(ttl.RemoveAfter) {
+						delayedKeysForDeletion = append(delayedKeysForDeletion, ttl.Key)
+					}
+				}
+				db.ttlLock.RUnlock()
+
+				for _, delayedKeyForDeletion := range delayedKeysForDeletion {
+					err := db.Remove(ctx, delayedKeyForDeletion)
+					if err != nil && !errors.Is(err, ErrKeyNotFound) {
+						db.logger.Errorw("remove expired key", err)
+					}
+
+					db.ttlLock.Lock()
+					delete(db.ttlMessages, delayedKeyForDeletion)
+					db.ttlLock.Unlock()
+				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()

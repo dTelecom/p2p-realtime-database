@@ -178,6 +178,25 @@ l:
 			} else {
 				fmt.Printf("key %s successfully set\n", fields[1])
 			}
+		case "ttl":
+			if len(fields) < 3 {
+				fmt.Println("ttl <key> <duration>")
+				fmt.Println("> ")
+				continue
+			}
+			duration, err := time.ParseDuration(fields[2])
+			if err != nil {
+				fmt.Printf("error parse duration: %s\n", err)
+				fmt.Println("> ")
+				continue
+			}
+			err = db.TTL(ctx, fields[1], duration)
+			if err != nil {
+				fmt.Printf("error ttl command: %s\n", err)
+				continue
+			} else {
+				fmt.Println("success set ttl")
+			}
 		}
 		fmt.Printf("> ")
 	}
