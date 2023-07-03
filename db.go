@@ -273,7 +273,7 @@ func Connect(
 
 		err = json.Unmarshal([]byte(body), &ttl)
 		if err != nil {
-			logger.Errorw("ttl topic handler: unmarshal body to TTLMessage", err, body)
+			logger.Errorw("ttl topic handler: unmarshal body to TTLMessage "+body, err)
 			return
 		}
 
