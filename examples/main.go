@@ -53,7 +53,7 @@ func main() {
 	defer logger.Sync()
 
 	cfg := p2p_database.EnvConfig
-	cfg.DatabaseName = "chat"
+	cfg.DatabaseName = "global"
 	cfg.WalletPrivateKey = *ethPrivateKey
 
 	var additionalDatabases = map[string]*p2p_database.DB{}
@@ -62,7 +62,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	additionalDatabases["chat"] = db
+	additionalDatabases["global"] = db
 
 	h := db.GetHost()
 	fmt.Printf("Peer id %s\n", h.ID().String())

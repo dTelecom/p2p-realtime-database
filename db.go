@@ -567,7 +567,7 @@ func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
 		RemoveAfter: time.Now().Add(ttl),
 	}
 
-	body, err := json.Marshal(ttl)
+	body, err := json.Marshal(ttlMessage)
 	if err != nil {
 		return errors.Wrap(err, "marshal ttl message")
 	}
