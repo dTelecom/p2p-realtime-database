@@ -173,39 +173,10 @@ func Connect(
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
 	}
 
-	crtdOpts := crdt.DefaultOptions()
-	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
-	crtdOpts.RebroadcastInterval = RebroadcastingInterval
-	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
-		if config.NewKeyCallback != nil {
-			config.NewKeyCallback(k.String())
-		}
-	}
-	crtdOpts.DeleteHook = func(k datastore.Key) {
-		fmt.Printf("Removed: [%s]\n", k)
-		if config.RemoveKeyCallback != nil {
-			config.RemoveKeyCallback(k.String())
-		}
-	}
-	crtdOpts.RebroadcastInterval = time.Second
-
 	doneBootstrappingIPFS, err := makeIPFS(ctx, ds, h)
 	if err != nil {
 		cancel()
 		return nil, err
-	}
-
-	datastoreCrdt, err := crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), globalIPFs, pubsubBC, crtdOpts)
-	if err != nil {
-		cancel()
-		return nil, errors.Wrap(err, "init crdt")
-	}
-
-	err = datastoreCrdt.Sync(ctx, datastore.NewKey("/"))
-	if err != nil {
-		cancel()
-		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
 	lock.Lock()
@@ -225,8 +196,6 @@ func Connect(
 		selfID: h.ID(),
 		logger: logger,
 
-		crdt: datastoreCrdt,
-
 		cancel:      cancel,
 		ttlLock:     sync.RWMutex{},
 		ttlMessages: map[string]TTLMessage{},
@@ -237,6 +206,41 @@ func Connect(
 
 		readyDatabaseLock: sync.Mutex{},
 		disconnectOnce:    sync.Once{},
+	}
+
+	crtdOpts := crdt.DefaultOptions()
+	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
+	crtdOpts.RebroadcastInterval = RebroadcastingInterval
+	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
+		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
+		if config.NewKeyCallback != nil {
+			config.NewKeyCallback(k.String())
+		}
+	}
+	crtdOpts.DeleteHook = func(k datastore.Key) {
+		fmt.Printf("Removed: [%s]\n", k)
+
+		key := strings.TrimLeft(k.String(), "/")
+		db.ttlLock.Lock()
+		delete(db.ttlMessages, key)
+		db.ttlLock.Unlock()
+
+		if config.RemoveKeyCallback != nil {
+			config.RemoveKeyCallback(k.String())
+		}
+	}
+	crtdOpts.RebroadcastInterval = time.Second
+
+	db.crdt, err = crdt.New(ds, datastore.NewKey("crdt_"+config.DatabaseName), globalIPFs, pubsubBC, crtdOpts)
+	if err != nil {
+		cancel()
+		return nil, errors.Wrap(err, "init crdt")
+	}
+
+	err = db.crdt.Sync(ctx, datastore.NewKey("/"))
+	if err != nil {
+		cancel()
+		return nil, errors.Wrap(err, "crdt sync datastore")
 	}
 
 	globalLockIPFS.RLock()
