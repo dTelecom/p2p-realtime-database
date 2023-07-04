@@ -41,6 +41,8 @@ const (
 	DefaultDatabaseEventsBufferSize = 128
 	RebroadcastingInterval          = 30 * time.Second
 
+	cleanupExpiredRecordsInterval = 1 * time.Second
+
 	NetSubscriptionTopicPrefix  = "crdt_net_"
 	NetSubscriptionPublishValue = "ping"
 
@@ -587,17 +589,34 @@ func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
 
 func (db *DB) startCleanupExpiredTTLKeysProcess(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(cleanupExpiredRecordsInterval)
 		for {
 			select {
 			case <-ticker.C:
 				var delayedKeysForDeletion []string
 
 				db.ttlLock.RLock()
-				for _, ttl := range db.ttlMessages {
-					if time.Now().After(ttl.RemoveAfter) || time.Now().Equal(ttl.RemoveAfter) {
-						delayedKeysForDeletion = append(delayedKeysForDeletion, ttl.Key)
+				for key, ttl := range db.ttlMessages {
+					now := time.Now().UTC()
+					removeAfter := ttl.RemoveAfter.UTC()
+
+					if now.Before(removeAfter) {
+						continue
 					}
+
+					lag := now.UnixMilli() - removeAfter.UnixMilli()
+					if lag > int64(float64(cleanupExpiredRecordsInterval.Milliseconds())*1.5) {
+						db.logger.Warnf("node lag %dms for remove expired record. forgot ttl for key %s", lag, key)
+
+						db.ttlLock.RUnlock()
+						db.ttlLock.Lock()
+						delete(db.ttlMessages, key)
+						db.ttlLock.Unlock()
+
+						continue
+					}
+
+					delayedKeysForDeletion = append(delayedKeysForDeletion, ttl.Key)
 				}
 				db.ttlLock.RUnlock()
 
