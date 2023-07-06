@@ -566,7 +566,7 @@ func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
 	ttlMessage := TTLMessage{
 		Key:         key,
-		RemoveAfter: time.Now().Add(ttl),
+		RemoveAfter: time.Now().UTC().Add(ttl),
 	}
 
 	body, err := json.Marshal(ttlMessage)
