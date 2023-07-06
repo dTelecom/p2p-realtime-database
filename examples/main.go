@@ -137,7 +137,7 @@ l:
 			if err != nil {
 				fmt.Printf("error list keys %s\n", err)
 			} else {
-				fmt.Printf("Found %d keys", len(keys))
+				fmt.Printf("Found %d keys\n", len(keys))
 				for _, k := range keys {
 					fmt.Println(k)
 				}
