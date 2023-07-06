@@ -755,7 +755,7 @@ func makeIPFS(ctx context.Context, ds datastore.Batching, h host.Host) (chan str
 	)
 
 	onceInitIPFS.Do(func() {
-		globalIPFs, err = ipfslite.New(context.Background(), ds, nil, h, globalDHT, &ipfslite.Config{ReprovideInterval: time.Second})
+		globalIPFs, err = ipfslite.New(context.Background(), ds, nil, h, globalDHT, &ipfslite.Config{})
 		go func() {
 			globalIPFs.Bootstrap(globalBootstrapNodes)
 
