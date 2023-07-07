@@ -169,7 +169,7 @@ func Connect(
 	}
 
 	for i, bootstrapNode := range globalBootstrapNodes {
-		logger.Infof("Bootstrap node %d - %s - [%s]\n\n", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
+		logger.Infof("Bootstrap node %d - %s - [%s]", i, bootstrapNode.String(), bootstrapNode.Addrs[0].String())
 		h.ConnManager().TagPeer(bootstrapNode.ID, "keep", 100)
 	}
 
