@@ -19,6 +19,8 @@ const (
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
 
+	alreadyConnected map[peer.ID]struct{}
+
 	lock  sync.Mutex
 	cache map[string]map[peer.ID]bool
 
@@ -26,12 +28,13 @@ type EthConnectionGater struct {
 	logger   logging.ZapEventLogger
 }
 
-func NewEthConnectionGater(contract *EthSmartContract, logger logging.ZapEventLogger) *EthConnectionGater {
+func NewEthConnectionGater(contract *EthSmartContract, alreadyConnected map[peer.ID]struct{}, logger logging.ZapEventLogger) *EthConnectionGater {
 	g := &EthConnectionGater{
-		contract: contract,
-		lock:     sync.Mutex{},
-		cache:    make(map[string]map[peer.ID]bool),
-		logger:   logger,
+		contract:         contract,
+		lock:             sync.Mutex{},
+		cache:            make(map[string]map[peer.ID]bool),
+		alreadyConnected: alreadyConnected,
+		logger:           logger,
 	}
 
 	g.startCleanupCacheProcess()

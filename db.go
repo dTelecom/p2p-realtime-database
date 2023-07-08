@@ -58,6 +58,9 @@ var (
 )
 
 var (
+	alreadyConnectedLock = sync.RWMutex{}
+	alreadyConnected     = make(map[peer.ID]struct{})
+
 	onceInitHostP2P = sync.Once{}
 	lock            = sync.RWMutex{}
 
@@ -714,7 +717,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		opts := ipfslite.Libp2pOptionsExtra
 		if !config.DisableGater {
 			opts = append(opts, libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+				NewEthConnectionGater(ethSmartContract, alreadyConnected, *logging.Logger("eth-connection-gater")),
 			))
 		}
 
@@ -729,6 +732,33 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		if errSetupLibP2P != nil {
 			return
 		}
+
+		go func() {
+			for {
+				alreadyConnectedLock.Lock()
+				for alreadyConnectedPeerId := range alreadyConnected {
+					var found bool
+					for _, peerId := range globalHost.Peerstore().Peers() {
+						if peerId.String() == alreadyConnectedPeerId.String() {
+							found = true
+						}
+					}
+					if !found {
+						fmt.Printf("node %s disconnected\n", alreadyConnectedPeerId)
+						delete(alreadyConnected, alreadyConnectedPeerId)
+					}
+				}
+				for _, peerId := range globalHost.Peerstore().Peers() {
+					_, alreadyCached := alreadyConnected[peerId]
+					if !alreadyCached {
+						fmt.Printf("node %s connected\n", peerId)
+						alreadyConnected[peerId] = struct{}{}
+					}
+				}
+				alreadyConnectedLock.Unlock()
+				time.Sleep(100 * time.Millisecond)
+			}
+		}()
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
