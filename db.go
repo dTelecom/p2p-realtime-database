@@ -180,13 +180,13 @@ func Connect(
 	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
+		fmt.Printf("[%s] Added: [%s] -> %s\n", time.Now().Format(time.RFC3339), k, string(v))
 		if config.NewKeyCallback != nil {
 			config.NewKeyCallback(k.String())
 		}
 	}
 	crtdOpts.DeleteHook = func(k datastore.Key) {
-		fmt.Printf("Removed: [%s]\n", k)
+		fmt.Printf("[%s] Removed: [%s]\n", time.Now().Format(time.RFC3339), k)
 		if config.RemoveKeyCallback != nil {
 			config.RemoveKeyCallback(k.String())
 		}
