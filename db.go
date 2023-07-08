@@ -738,7 +738,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 				alreadyConnectedLock.Lock()
 				for alreadyConnectedPeerId := range alreadyConnected {
 					var found bool
-					for _, peerId := range globalHost.Peerstore().Peers() {
+					for _, peerId := range globalHost.Network().Peers() {
 						if peerId.String() == alreadyConnectedPeerId.String() {
 							found = true
 						}
@@ -748,7 +748,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 						delete(alreadyConnected, alreadyConnectedPeerId)
 					}
 				}
-				for _, peerId := range globalHost.Peerstore().Peers() {
+				for _, peerId := range globalHost.Network().Peers() {
 					_, alreadyCached := alreadyConnected[peerId]
 					if !alreadyCached {
 						fmt.Printf("node %s connected\n", peerId)
