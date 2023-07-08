@@ -59,7 +59,7 @@ var (
 
 var (
 	alreadyConnectedLock = sync.RWMutex{}
-	alreadyConnected     = make(map[peer.ID]struct{})
+	alreadyConnected     = make(map[peer.ID]multiaddr.Multiaddr)
 
 	onceInitHostP2P = sync.Once{}
 	lock            = sync.RWMutex{}
@@ -749,10 +749,15 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 					}
 				}
 				for _, peerId := range globalHost.Network().Peers() {
+					multiaddrs := globalHost.Peerstore().Addrs(peerId)
+					if len(multiaddrs) == 0 {
+						fmt.Printf("node %s has 0 multiaddress\n", peerId)
+						continue
+					}
 					_, alreadyCached := alreadyConnected[peerId]
 					if !alreadyCached {
-						fmt.Printf("node %s connected\n", peerId)
-						alreadyConnected[peerId] = struct{}{}
+						fmt.Printf("node %s connected multiaddr %s\n", peerId, multiaddrs[0])
+						alreadyConnected[peerId] = multiaddrs[0]
 					}
 				}
 				alreadyConnectedLock.Unlock()

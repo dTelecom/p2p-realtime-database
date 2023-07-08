@@ -10,7 +10,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -20,7 +19,7 @@ const (
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
 
-	alreadyConnected map[peer.ID]struct{}
+	alreadyConnected map[peer.ID]multiaddr.Multiaddr
 
 	lock  sync.Mutex
 	cache map[string]map[peer.ID]bool
@@ -29,7 +28,7 @@ type EthConnectionGater struct {
 	logger   logging.ZapEventLogger
 }
 
-func NewEthConnectionGater(contract *EthSmartContract, alreadyConnected map[peer.ID]struct{}, logger logging.ZapEventLogger) *EthConnectionGater {
+func NewEthConnectionGater(contract *EthSmartContract, alreadyConnected map[peer.ID]multiaddr.Multiaddr, logger logging.ZapEventLogger) *EthConnectionGater {
 	g := &EthConnectionGater{
 		contract:         contract,
 		lock:             sync.Mutex{},
@@ -49,6 +48,13 @@ func (e *EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 
 func (e *EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
 	e.logger.Errorf("InterceptAddrDial %s %s", id, multiaddr.String())
+
+	multiAddrConnected, alreadyConnect := e.alreadyConnected[id]
+	if alreadyConnect && multiAddrConnected.String() != multiaddr.String() {
+		e.logger.Errorf("InterceptAddrDial %s expected %s got %s", id, multiAddrConnected.String(), multiaddr.String())
+		return false
+	}
+
 	return e.checkPeerId(id, "InterceptAddrDial")
 }
 
@@ -67,12 +73,6 @@ func (e *EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, r
 func (e *EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
 	if EnvConfig.DisableGater {
 		return true
-	}
-
-	_, alreadyConnect := e.alreadyConnected[p]
-	if alreadyConnect {
-		e.logger.Errorf("try validate peer %s with method %s error %s", p, method, errors.New("peer with same id already connected"))
-		return false
 	}
 
 	e.lock.Lock()
