@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -65,6 +66,12 @@ func (e *EthConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool, r
 func (e *EthConnectionGater) checkPeerId(p peer.ID, method string) bool {
 	if EnvConfig.DisableGater {
 		return true
+	}
+
+	_, alreadyConnect := e.alreadyConnected[p]
+	if alreadyConnect {
+		e.logger.Errorf("try validate peer %s with method %s error %s", p, method, errors.New("peer with same id already connected"))
+		return false
 	}
 
 	e.lock.Lock()
