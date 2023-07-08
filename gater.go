@@ -48,6 +48,7 @@ func (e *EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 }
 
 func (e *EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
+	e.logger.Errorf("InterceptAddrDial %s %s", id, multiaddr.String())
 	return e.checkPeerId(id, "InterceptAddrDial")
 }
 
