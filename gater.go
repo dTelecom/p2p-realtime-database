@@ -1,6 +1,7 @@
 package p2p_database
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ const (
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
 
-	alreadyConnected map[peer.ID]multiaddr.Multiaddr
+	connectionManager *ConnectionManager
 
 	lock  sync.Mutex
 	cache map[string]map[peer.ID]bool
@@ -28,13 +29,13 @@ type EthConnectionGater struct {
 	logger   logging.ZapEventLogger
 }
 
-func NewEthConnectionGater(contract *EthSmartContract, alreadyConnected map[peer.ID]multiaddr.Multiaddr, logger logging.ZapEventLogger) *EthConnectionGater {
+func NewEthConnectionGater(contract *EthSmartContract, connectionManager *ConnectionManager, logger logging.ZapEventLogger) *EthConnectionGater {
 	g := &EthConnectionGater{
-		contract:         contract,
-		lock:             sync.Mutex{},
-		cache:            make(map[string]map[peer.ID]bool),
-		alreadyConnected: alreadyConnected,
-		logger:           logger,
+		contract:          contract,
+		lock:              sync.Mutex{},
+		cache:             make(map[string]map[peer.ID]bool),
+		connectionManager: connectionManager,
+		logger:            logger,
 	}
 
 	g.startCleanupCacheProcess()
@@ -49,10 +50,19 @@ func (e *EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 func (e *EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
 	e.logger.Errorf("InterceptAddrDial %s %s", id, multiaddr.String())
 
-	multiAddrConnected, alreadyConnect := e.alreadyConnected[id]
-	if alreadyConnect && multiAddrConnected.String() != multiaddr.String() {
-		e.logger.Errorf("InterceptAddrDial %s expected %s got %s", id, multiAddrConnected.String(), multiaddr.String())
-		return false
+	if e.connectionManager != nil {
+		fmt.Println("connection manager is not nil")
+		connectedMultiAddr, err := e.connectionManager.GetPeerIdMultiAddress(id)
+		if err != nil {
+			e.logger.Errorf("GetPeerIdMultiAddress error: %s", err)
+		} else {
+			if !connectedMultiAddr.Equal(multiaddr) {
+				e.logger.Errorf(
+					"InterceptAddrDial %s expected %s got %s",
+					id, connectedMultiAddr.String(), multiaddr.String(),
+				)
+			}
+		}
 	}
 
 	return e.checkPeerId(id, "InterceptAddrDial")

@@ -70,6 +70,8 @@ var (
 	globalBootstrapNodes         []peer.AddrInfo
 	globalGossipSub              *pubsub.PubSub
 
+	globalConnectionManager *ConnectionManager
+
 	globalLockIPFS  = sync.RWMutex{}
 	onceInitIPFS    = sync.Once{}
 	globalReadyIPFS bool
@@ -717,7 +719,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		opts := ipfslite.Libp2pOptionsExtra
 		if !config.DisableGater {
 			opts = append(opts, libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, alreadyConnected, *logging.Logger("eth-connection-gater")),
+				NewEthConnectionGater(ethSmartContract, globalConnectionManager, *logging.Logger("eth-connection-gater")),
 			))
 		}
 
@@ -733,37 +735,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 			return
 		}
 
-		go func() {
-			for {
-				alreadyConnectedLock.Lock()
-				for alreadyConnectedPeerId := range alreadyConnected {
-					var found bool
-					for _, peerId := range globalHost.Network().Peers() {
-						if peerId.String() == alreadyConnectedPeerId.String() {
-							found = true
-						}
-					}
-					if !found {
-						fmt.Printf("node %s disconnected\n", alreadyConnectedPeerId)
-						delete(alreadyConnected, alreadyConnectedPeerId)
-					}
-				}
-				for _, peerId := range globalHost.Network().Peers() {
-					multiaddrs := globalHost.Peerstore().Addrs(peerId)
-					if len(multiaddrs) == 0 {
-						fmt.Printf("node %s has 0 multiaddress\n", peerId)
-						continue
-					}
-					_, alreadyCached := alreadyConnected[peerId]
-					if !alreadyCached {
-						fmt.Printf("node %s connected multiaddr %s\n", peerId, multiaddrs[0])
-						alreadyConnected[peerId] = multiaddrs[0]
-					}
-				}
-				alreadyConnectedLock.Unlock()
-				time.Sleep(100 * time.Millisecond)
-			}
-		}()
+		globalConnectionManager = NewConnectionManager(globalHost)
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
