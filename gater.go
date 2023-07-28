@@ -19,6 +19,8 @@ const (
 type EthConnectionGater struct {
 	connmgr.ConnectionGater
 
+	connectionManager *ConnectionManager
+
 	lock  sync.Mutex
 	cache map[string]map[peer.ID]bool
 
@@ -26,12 +28,13 @@ type EthConnectionGater struct {
 	logger   logging.ZapEventLogger
 }
 
-func NewEthConnectionGater(contract *EthSmartContract, logger logging.ZapEventLogger) *EthConnectionGater {
+func NewEthConnectionGater(contract *EthSmartContract, connectionManager *ConnectionManager, logger logging.ZapEventLogger) *EthConnectionGater {
 	g := &EthConnectionGater{
-		contract: contract,
-		lock:     sync.Mutex{},
-		cache:    make(map[string]map[peer.ID]bool),
-		logger:   logger,
+		contract:          contract,
+		lock:              sync.Mutex{},
+		cache:             make(map[string]map[peer.ID]bool),
+		connectionManager: connectionManager,
+		logger:            logger,
 	}
 
 	g.startCleanupCacheProcess()
@@ -44,6 +47,20 @@ func (e *EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 }
 
 func (e *EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
+	if e.connectionManager != nil {
+		connectedMultiAddr, err := e.connectionManager.GetPeerIdMultiAddress(id)
+		if err != nil {
+			e.logger.Errorf("GetPeerIdMultiAddress error: %s", err)
+		} else {
+			if !connectedMultiAddr.Equal(multiaddr) {
+				e.logger.Errorf(
+					"InterceptAddrDial %s expected %s got %s",
+					id, connectedMultiAddr.String(), multiaddr.String(),
+				)
+			}
+		}
+	}
+
 	return e.checkPeerId(id, "InterceptAddrDial")
 }
 

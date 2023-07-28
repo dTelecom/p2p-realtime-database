@@ -58,6 +58,9 @@ var (
 )
 
 var (
+	alreadyConnectedLock = sync.RWMutex{}
+	alreadyConnected     = make(map[peer.ID]multiaddr.Multiaddr)
+
 	onceInitHostP2P = sync.Once{}
 	lock            = sync.RWMutex{}
 
@@ -66,6 +69,8 @@ var (
 	globalDHT                    *dual.DHT
 	globalBootstrapNodes         []peer.AddrInfo
 	globalGossipSub              *pubsub.PubSub
+
+	globalConnectionManager *ConnectionManager
 
 	globalLockIPFS  = sync.RWMutex{}
 	onceInitIPFS    = sync.Once{}
@@ -177,13 +182,13 @@ func Connect(
 	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
+		fmt.Printf("[%s] Added: [%s] -> %s\n", time.Now().Format(time.RFC3339), k, string(v))
 		if config.NewKeyCallback != nil {
 			config.NewKeyCallback(k.String())
 		}
 	}
 	crtdOpts.DeleteHook = func(k datastore.Key) {
-		fmt.Printf("Removed: [%s]\n", k)
+		fmt.Printf("[%s] Removed: [%s]\n", time.Now().Format(time.RFC3339), k)
 		if config.RemoveKeyCallback != nil {
 			config.RemoveKeyCallback(k.String())
 		}
@@ -486,6 +491,17 @@ func (db *DB) GetHost() host.Host {
 	return db.host
 }
 
+func (db *DB) ConnectedPeers() []*peer.AddrInfo {
+	var pinfos []*peer.AddrInfo
+	for _, c := range db.host.Network().Conns() {
+		pinfos = append(pinfos, &peer.AddrInfo{
+			ID:    c.RemotePeer(),
+			Addrs: []multiaddr.Multiaddr{c.RemoteMultiaddr()},
+		})
+	}
+	return pinfos
+}
+
 func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -714,7 +730,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		opts := ipfslite.Libp2pOptionsExtra
 		if !config.DisableGater {
 			opts = append(opts, libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+				NewEthConnectionGater(ethSmartContract, globalConnectionManager, *logging.Logger("eth-connection-gater")),
 			))
 		}
 
@@ -729,6 +745,8 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		if errSetupLibP2P != nil {
 			return
 		}
+
+		globalConnectionManager = NewConnectionManager(globalHost)
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
