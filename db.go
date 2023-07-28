@@ -746,7 +746,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 			return
 		}
 
-		globalConnectionManager = NewConnectionManager(globalHost)
+		globalConnectionManager = NewConnectionManager(globalHost, logging.Logger("connection-manager"))
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
