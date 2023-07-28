@@ -491,6 +491,17 @@ func (db *DB) GetHost() host.Host {
 	return db.host
 }
 
+func (db *DB) ConnectedPeers() []*peer.AddrInfo {
+	var pinfos []*peer.AddrInfo
+	for _, c := range db.host.Network().Conns() {
+		pinfos = append(pinfos, &peer.AddrInfo{
+			ID:    c.RemotePeer(),
+			Addrs: []multiaddr.Multiaddr{c.RemoteMultiaddr()},
+		})
+	}
+	return pinfos
+}
+
 func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
 	lock.Lock()
 	defer lock.Unlock()

@@ -1,7 +1,6 @@
 package p2p_database
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -48,10 +47,7 @@ func (e *EthConnectionGater) InterceptPeerDial(p peer.ID) (allow bool) {
 }
 
 func (e *EthConnectionGater) InterceptAddrDial(id peer.ID, multiaddr multiaddr.Multiaddr) (allow bool) {
-	e.logger.Errorf("InterceptAddrDial %s %s", id, multiaddr.String())
-
 	if e.connectionManager != nil {
-		fmt.Println("connection manager is not nil")
 		connectedMultiAddr, err := e.connectionManager.GetPeerIdMultiAddress(id)
 		if err != nil {
 			e.logger.Errorf("GetPeerIdMultiAddress error: %s", err)
