@@ -8,13 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p"
-
 	"github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/multiformats/go-multiaddr"
+	zaploki "github.com/paul-milne/zap-loki"
+	"go.uber.org/zap"
 
 	"github.com/google/uuid"
 	ipfs_datastore "github.com/ipfs/go-datastore/sync"
@@ -58,6 +59,9 @@ var (
 )
 
 var (
+	alreadyConnectedLock = sync.RWMutex{}
+	alreadyConnected     = make(map[peer.ID]multiaddr.Multiaddr)
+
 	onceInitHostP2P = sync.Once{}
 	lock            = sync.RWMutex{}
 
@@ -66,6 +70,8 @@ var (
 	globalDHT                    *dual.DHT
 	globalBootstrapNodes         []peer.AddrInfo
 	globalGossipSub              *pubsub.PubSub
+
+	globalConnectionManager *ConnectionManager
 
 	globalLockIPFS  = sync.RWMutex{}
 	onceInitIPFS    = sync.Once{}
@@ -115,7 +121,9 @@ type DB struct {
 	ready             bool
 	readyDatabaseLock sync.Mutex
 	disconnectOnce    sync.Once
-	logger            *logging.ZapEventLogger
+
+	logger       *logging.ZapEventLogger
+	remoteLogger *zap.Logger
 }
 
 func Connect(
@@ -177,13 +185,13 @@ func Connect(
 	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		fmt.Printf("Added: [%s] -> %s\n", k, string(v))
+		fmt.Printf("[%s] Added: [%s] -> %s\n", time.Now().Format(time.RFC3339), k, string(v))
 		if config.NewKeyCallback != nil {
 			config.NewKeyCallback(k.String())
 		}
 	}
 	crtdOpts.DeleteHook = func(k datastore.Key) {
-		fmt.Printf("Removed: [%s]\n", k)
+		fmt.Printf("[%s] Removed: [%s]\n", time.Now().Format(time.RFC3339), k)
 		if config.RemoveKeyCallback != nil {
 			config.RemoveKeyCallback(k.String())
 		}
@@ -219,11 +227,36 @@ func Connect(
 	}
 	lock.Unlock()
 
+	var remoteLogger *zap.Logger
+	if config.LokiLoggingHost != "" {
+		zapConfig := zap.NewProductionConfig()
+		zapConfig.OutputPaths = []string{"/dev/null"}
+
+		loki := zaploki.New(context.Background(), zaploki.Config{
+			Url:          config.LokiLoggingHost,
+			BatchMaxSize: 1,
+			BatchMaxWait: 10 * time.Second,
+			Labels:       map[string]string{"database_name": config.DatabaseName, "peer_id": h.ID().String()},
+		})
+		remoteLogger, err = loki.WithCreateLogger(zapConfig)
+		go func() {
+			for {
+				remoteLogger.Sync()
+				time.Sleep(5 * time.Second)
+			}
+		}()
+		if err != nil {
+			logger.Errorf("try init remote logger with loki host %s: %s", config.LokiLoggingHost, err.Error())
+		}
+	}
+
 	db := &DB{
 		Name:   config.DatabaseName,
 		host:   h,
 		selfID: h.ID(),
-		logger: logger,
+
+		logger:       logger,
+		remoteLogger: remoteLogger,
 
 		crdt: datastoreCrdt,
 
@@ -258,7 +291,10 @@ func Connect(
 	db.Subscribe(ctx, NetSubscriptionTopicPrefix+config.DatabaseName, func(event Event) {
 		peerId, err := peer.Decode(event.FromPeerId)
 		if err != nil {
-			db.logger.Errorf("net topic parse peer %s error: %w", event.FromPeerId, err)
+			db.logger.Errorf("net topic parse peer %s error: %s", event.FromPeerId, err)
+			if db.remoteLogger != nil {
+				db.remoteLogger.Error(fmt.Sprintf("net topic parse peer %s error: %s", event.FromPeerId, err))
+			}
 			return
 		}
 
@@ -287,6 +323,20 @@ func Connect(
 	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
 	db.startDiscovery(ctx)
 	db.startCleanupExpiredTTLKeysProcess(ctx)
+
+	go func() {
+		if remoteLogger == nil {
+			return
+		}
+
+		for {
+			peers := db.ConnectedPeers()
+			for _, p := range peers {
+				remoteLogger.Info("connected peer", zap.String("peer", p.String()))
+			}
+			time.Sleep(15 * time.Second)
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
@@ -418,6 +468,10 @@ func (db *DB) Publish(ctx context.Context, topic string, value interface{}, opts
 		return Event{}, errors.Wrap(err, "try marshal message")
 	}
 
+	if db.remoteLogger != nil {
+		db.remoteLogger.Info("Send message to topic", zap.ByteString("message", marshaled), zap.String("topic", topic), zap.String("id", event.ID))
+	}
+
 	err = t.Publish(ctx, marshaled, opts...)
 	if err != nil {
 		return Event{}, errors.Wrap(err, "pub sub publish message")
@@ -486,6 +540,17 @@ func (db *DB) GetHost() host.Host {
 	return db.host
 }
 
+func (db *DB) ConnectedPeers() []*peer.AddrInfo {
+	var pinfos []*peer.AddrInfo
+	for _, c := range db.host.Network().Conns() {
+		pinfos = append(pinfos, &peer.AddrInfo{
+			ID:    c.RemotePeer(),
+			Addrs: []multiaddr.Multiaddr{c.RemoteMultiaddr()},
+		})
+	}
+	return pinfos
+}
+
 func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -505,6 +570,10 @@ func (db *DB) joinTopic(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, e
 		return nil, errors.Wrap(err, "pub sub join topic")
 	}
 	globalJoinedTopicsPerDb[db.Name][topic] = t
+
+	if db.remoteLogger != nil {
+		db.remoteLogger.Info("subscribe to topic", zap.String("topic", topic))
+	}
 
 	return t, nil
 }
@@ -536,6 +605,16 @@ func (db *DB) listenEvents(ctx context.Context, topicSub *TopicSubscription) err
 			err = json.Unmarshal(msg.Data, &event)
 			if err != nil {
 				db.logger.Errorf("try unmarshal pub sub message from %s error %s, data: %s", msg.ReceivedFrom, err, string(msg.Data))
+			}
+
+			if db.remoteLogger != nil {
+				db.remoteLogger.Info(
+					"got message from topic",
+					zap.String("topic", *msg.Topic),
+					zap.String("id", event.ID),
+					zap.String("from_id", event.FromPeerId),
+					zap.ByteString("data", msg.Data),
+				)
 			}
 
 			topicSub.handler(event)
@@ -714,7 +793,7 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		opts := ipfslite.Libp2pOptionsExtra
 		if !config.DisableGater {
 			opts = append(opts, libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, *logging.Logger("eth-connection-gater")),
+				NewEthConnectionGater(ethSmartContract, globalConnectionManager, *logging.Logger("eth-connection-gater")),
 			))
 		}
 
@@ -729,6 +808,8 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		if errSetupLibP2P != nil {
 			return
 		}
+
+		globalConnectionManager = NewConnectionManager(globalHost, logging.Logger("connection-manager"))
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {
