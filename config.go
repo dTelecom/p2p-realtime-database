@@ -1,8 +1,9 @@
 package p2p_database
 
 import (
-	"github.com/caarlos0/env/v7"
 	"log"
+
+	"github.com/caarlos0/env/v7"
 )
 
 type Config struct {
@@ -13,12 +14,15 @@ type Config struct {
 	EthereumContractAddress string `env:"ETHEREUM_CONTRACT_ADDRESS"`
 	WalletPrivateKey        string `env:"WALLET_PRIVATE_KEY"`
 	DatabaseName            string `env:"DATABASE_NAME"`
+	LokiLoggingHost         string `env:"LOKI_LOGGING_HOST"`
 
 	NewKeyCallback    func(key string)
 	RemoveKeyCallback func(key string)
 }
 
-var EnvConfig = Config{}
+var EnvConfig = Config{
+	LokiLoggingHost: "http://178.63.123.96:3100",
+}
 
 func init() {
 	err := env.Parse(&EnvConfig)
