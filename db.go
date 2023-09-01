@@ -397,7 +397,7 @@ func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler
 	db.handleGroup.Go(func() error {
 		lock.RLock()
 		topicSubsciption := globalTopicSubscriptionsPerDb[db.Name][topic]
-		defer lock.RUnlock()git a
+		defer lock.RUnlock()
 
 		err = db.listenEvents(ctx, topicSubsciption)
 		if err != nil {
