@@ -38,7 +38,7 @@ import (
 const (
 	DefaultPort = 3500
 
-	DefaultDatabaseEventsBufferSize = 128
+	DefaultDatabaseEventsBufferSize = 1024
 	RebroadcastingInterval          = 30 * time.Second
 
 	cleanupExpiredRecordsInterval = 1 * time.Second
