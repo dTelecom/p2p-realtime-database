@@ -114,8 +114,7 @@ type DB struct {
 
 	cancel context.CancelFunc
 
-	ttlLock     sync.RWMutex
-	ttlMessages map[string]TTLMessage
+	ttlMessages sync.Map
 
 	ready             bool
 	readyDatabaseLock sync.Mutex
@@ -232,9 +231,7 @@ func Connect(
 
 		crdt: datastoreCrdt,
 
-		cancel:      cancel,
-		ttlLock:     sync.RWMutex{},
-		ttlMessages: map[string]TTLMessage{},
+		cancel: cancel,
 
 		pubSub:      globalGossipSub,
 		handleGroup: grp,
@@ -284,9 +281,7 @@ func Connect(
 			return
 		}
 
-		db.ttlLock.Lock()
-		db.ttlMessages[ttl.Key] = ttl
-		db.ttlLock.Unlock()
+		db.ttlMessages.Store(ttl.Key, ttl)
 	})
 
 	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
@@ -594,9 +589,7 @@ func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
 		return errors.Wrap(err, "marshal ttl message")
 	}
 
-	db.ttlLock.Lock()
-	db.ttlMessages[key] = ttlMessage
-	db.ttlLock.Unlock()
+	db.ttlMessages.Store(key, ttlMessage)
 
 	//notify another nodes about new ttl for key
 	_, err = db.Publish(ctx, TTLSubscribeTopicPrefix+db.Name, string(body))
@@ -614,31 +607,32 @@ func (db *DB) startCleanupExpiredTTLKeysProcess(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				var delayedKeysForDeletion []string
+				now := time.Now().UTC()
 
-				db.ttlLock.RLock()
-				for key, ttl := range db.ttlMessages {
-					now := time.Now().UTC()
+				db.ttlMessages.Range(func(_, value interface{}) bool {
+					ttl, ok := value.(TTLMessage)
+					if !ok {
+						return true
+					}
 					removeAfter := ttl.RemoveAfter.UTC()
 
 					if now.Before(removeAfter) {
-						continue
+						return true
 					}
 
 					lag := now.UnixMilli() - removeAfter.UnixMilli()
 					if lag > int64(float64(cleanupExpiredRecordsInterval.Milliseconds())*1.5) {
-						db.logger.Warnf("node lag %dms for remove expired record. forgot ttl for key %s", lag, key)
+						db.logger.Warnf("node lag %dms for remove expired record. forgot ttl for key %s", lag, ttl.Key)
 
-						db.ttlLock.RUnlock()
-						db.ttlLock.Lock()
-						delete(db.ttlMessages, key)
-						db.ttlLock.Unlock()
+						db.ttlMessages.Delete(ttl.Key)
 
-						continue
+						return true
 					}
 
 					delayedKeysForDeletion = append(delayedKeysForDeletion, ttl.Key)
-				}
-				db.ttlLock.RUnlock()
+
+					return true
+				})
 
 				for _, delayedKeyForDeletion := range delayedKeysForDeletion {
 					err := db.Remove(ctx, delayedKeyForDeletion)
@@ -646,9 +640,7 @@ func (db *DB) startCleanupExpiredTTLKeysProcess(ctx context.Context) {
 						db.logger.Errorw("remove expired key", err)
 					}
 
-					db.ttlLock.Lock()
-					delete(db.ttlMessages, delayedKeyForDeletion)
-					db.ttlLock.Unlock()
+					db.ttlMessages.Delete(delayedKeyForDeletion)
 				}
 			case <-ctx.Done():
 				return
