@@ -113,6 +113,15 @@ func (e *EthSmartContract) ValidatePeer(p peer.ID) (bool, error) {
 	return n.Active, nil
 }
 
+func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
+	e.logger.Debug("call method PublicKeyByAddress")
+	client, err := e.client.ClientByAddress(nil, common.HexToAddress(address))
+	if err != nil {
+		return "", errors.Wrap(err, "try get client by address")
+	}
+	return client.Key, nil
+}
+
 func (e *EthSmartContract) getEthAddrFromPeer(p peer.ID) (string, error) {
 	pubkey, err := p.ExtractPublicKey()
 	if err != nil {
