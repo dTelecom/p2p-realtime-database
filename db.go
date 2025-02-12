@@ -22,7 +22,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 
 	eth_crypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
@@ -38,15 +37,11 @@ import (
 const (
 	DefaultPort = 3500
 
-	DefaultDatabaseEventsBufferSize = 1024
+	DefaultDatabaseEventsBufferSize = 10024
 	RebroadcastingInterval          = 30 * time.Second
-
-	cleanupExpiredRecordsInterval = 1 * time.Second
 
 	NetSubscriptionTopicPrefix  = "crdt_net_"
 	NetSubscriptionPublishValue = "ping"
-
-	TTLSubscribeTopicPrefix = "ttl_"
 )
 
 const DiscoveryTag = "p2p-database-discovery"
@@ -58,9 +53,6 @@ var (
 )
 
 var (
-	alreadyConnectedLock = sync.RWMutex{}
-	alreadyConnected     = make(map[peer.ID]multiaddr.Multiaddr)
-
 	onceInitHostP2P = sync.Once{}
 	lock            = sync.RWMutex{}
 
@@ -69,8 +61,6 @@ var (
 	globalDHT                    *dual.DHT
 	globalBootstrapNodes         []peer.AddrInfo
 	globalGossipSub              *pubsub.PubSub
-
-	globalConnectionManager *ConnectionManager
 
 	globalLockIPFS  = sync.RWMutex{}
 	onceInitIPFS    = sync.Once{}
@@ -81,11 +71,6 @@ var (
 	globalJoinedTopicsPerDb       = map[string]map[string]*pubsub.Topic{}
 	globalTopicSubscriptionsPerDb = map[string]map[string]*TopicSubscription{}
 )
-
-type TTLMessage struct {
-	Key         string    `json:"key"`
-	RemoveAfter time.Time `json:"remove_after"`
-}
 
 type PubSubHandler func(Event)
 
@@ -114,8 +99,6 @@ type DB struct {
 
 	cancel context.CancelFunc
 
-	ttlMessages sync.Map
-
 	ready             bool
 	readyDatabaseLock sync.Mutex
 	disconnectOnce    sync.Once
@@ -139,7 +122,8 @@ func Connect(
 	if port == 0 {
 		port = DefaultPort
 	}
-	h, _, err := makeHost(ctx, config, port)
+
+	h, _, err := makeHost(ctx, config, port, logger)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "make lib p2p host")
@@ -178,7 +162,7 @@ func Connect(
 	}
 
 	crtdOpts := crdt.DefaultOptions()
-	crtdOpts.Logger = logging.Logger("p2p_database_" + config.DatabaseName)
+	crtdOpts.Logger = logger
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
 		fmt.Printf("[%s] Added: [%s] -> %s\n", time.Now().Format(time.RFC3339), k, string(v))
@@ -271,22 +255,8 @@ func Connect(
 		db.host.ConnManager().TagPeer(peerId, "keep", 100)
 	})
 
-	db.Subscribe(ctx, TTLSubscribeTopicPrefix+config.DatabaseName, func(event Event) {
-		body := event.Message.(string)
-		ttl := TTLMessage{}
-
-		err = json.Unmarshal([]byte(body), &ttl)
-		if err != nil {
-			logger.Errorw("ttl topic handler: unmarshal body to TTLMessage "+body, err)
-			return
-		}
-
-		db.ttlMessages.Store(ttl.Key, ttl)
-	})
-
 	db.netPingPeers(ctx, NetSubscriptionTopicPrefix+config.DatabaseName)
 	db.startDiscovery(ctx)
-	db.startCleanupExpiredTTLKeysProcess(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -300,68 +270,6 @@ func Connect(
 
 func (db *DB) String() string {
 	return db.Name
-}
-
-func (db *DB) List(ctx context.Context) ([]string, error) {
-	db.WaitReady(ctx)
-
-	r, err := db.crdt.Query(ctx, query.Query{KeysOnly: true})
-	if err != nil {
-		return nil, errors.Wrap(err, "crdt list query")
-	}
-
-	var keys []string
-	for k := range r.Next() {
-		keys = append(keys, k.Key)
-	}
-
-	return keys, nil
-}
-
-func (db *DB) Set(ctx context.Context, key, value string) error {
-	db.WaitReady(ctx)
-
-	if len(key) == 0 {
-		return ErrEmptyKey
-	}
-
-	err := db.crdt.Put(ctx, datastore.NewKey(key), []byte(value))
-	if err != nil {
-		return errors.Wrap(err, "crdt put")
-	}
-
-	return nil
-}
-
-func (db *DB) Get(ctx context.Context, key string) (string, error) {
-	db.WaitReady(ctx)
-
-	if len(key) == 0 {
-		return "", ErrEmptyKey
-	}
-
-	val, err := db.crdt.Get(ctx, datastore.NewKey(key))
-	switch {
-	case err != nil && strings.Contains(err.Error(), "key not found"):
-		return "", ErrKeyNotFound
-	case err != nil:
-		return "", errors.Wrap(err, "crdt get")
-	}
-
-	return string(val), nil
-}
-
-func (db *DB) Remove(ctx context.Context, key string) error {
-	db.WaitReady(ctx)
-
-	err := db.crdt.Delete(ctx, datastore.NewKey(key))
-	switch {
-	case err != nil && strings.Contains(err.Error(), "key not found"):
-		return ErrKeyNotFound
-	case err != nil:
-		return errors.Wrap(err, "crdt delete")
-	}
-	return nil
 }
 
 func (db *DB) Subscribe(ctx context.Context, topic string, handler PubSubHandler, opts ...pubsub.TopicOpt) error {
@@ -465,13 +373,6 @@ func (db *DB) disconnect(ctx context.Context) error {
 		err := db.handleGroup.Wait()
 		return err
 	})
-	//g.Go(func() error {
-	//	err := db.crdt.Close()
-	//	if err != nil {
-	//		return errors.Wrap(err, "crdt close")
-	//	}
-	//	return nil
-	//})
 
 	ch := make(chan error, 1)
 	go func() {
@@ -578,77 +479,6 @@ func (db *DB) netPingPeers(ctx context.Context, netTopic string) {
 	}()
 }
 
-func (db *DB) TTL(ctx context.Context, key string, ttl time.Duration) error {
-	ttlMessage := TTLMessage{
-		Key:         key,
-		RemoveAfter: time.Now().UTC().Add(ttl),
-	}
-
-	body, err := json.Marshal(ttlMessage)
-	if err != nil {
-		return errors.Wrap(err, "marshal ttl message")
-	}
-
-	db.ttlMessages.Store(key, ttlMessage)
-
-	//notify another nodes about new ttl for key
-	_, err = db.Publish(ctx, TTLSubscribeTopicPrefix+db.Name, string(body))
-	if err != nil {
-		return errors.Wrap(err, "publish message")
-	}
-
-	return nil
-}
-
-func (db *DB) startCleanupExpiredTTLKeysProcess(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(cleanupExpiredRecordsInterval)
-		for {
-			select {
-			case <-ticker.C:
-				var delayedKeysForDeletion []string
-				now := time.Now().UTC()
-
-				db.ttlMessages.Range(func(_, value interface{}) bool {
-					ttl, ok := value.(TTLMessage)
-					if !ok {
-						return true
-					}
-					removeAfter := ttl.RemoveAfter.UTC()
-
-					if now.Before(removeAfter) {
-						return true
-					}
-
-					lag := now.UnixMilli() - removeAfter.UnixMilli()
-					if lag > int64(float64(cleanupExpiredRecordsInterval.Milliseconds())*1.5) {
-						db.logger.Warnf("node lag %dms for remove expired record. forgot ttl for key %s", lag, ttl.Key)
-
-						db.ttlMessages.Delete(ttl.Key)
-
-						return true
-					}
-
-					delayedKeysForDeletion = append(delayedKeysForDeletion, ttl.Key)
-
-					return true
-				})
-
-				for _, delayedKeyForDeletion := range delayedKeysForDeletion {
-					err := db.Remove(ctx, delayedKeyForDeletion)
-					if err != nil && !errors.Is(err, ErrKeyNotFound) {
-						db.logger.Errorw("remove expired key", err)
-					}
-
-					db.ttlMessages.Delete(delayedKeyForDeletion)
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-}
-
 func (db *DB) WaitReady(ctx context.Context) {
 	if db.ready || globalReadyIPFS {
 		return
@@ -699,8 +529,8 @@ func (db *DB) startDiscovery(ctx context.Context) {
 	}()
 }
 
-func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DHT, error) {
-	ethSmartContract, err := NewEthSmartContract(config, logging.Logger("eth-smart-contract"))
+func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapEventLogger) (host.Host, *dual.DHT, error) {
+	ethSmartContract, err := NewEthSmartContract(config, logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "create ethereum smart contract")
 	}
@@ -724,11 +554,9 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 	var errSetupLibP2P error
 	onceInitHostP2P.Do(func() {
 		opts := ipfslite.Libp2pOptionsExtra
-		if !config.DisableGater {
-			opts = append(opts, libp2p.ConnectionGater(
-				NewEthConnectionGater(ethSmartContract, globalConnectionManager, *logging.Logger("eth-connection-gater")),
-			))
-		}
+		opts = append(opts, libp2p.ConnectionGater(
+			NewEthConnectionGater(ethSmartContract, logger),
+		))
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
 			context.Background(),
@@ -741,8 +569,6 @@ func makeHost(ctx context.Context, config Config, port int) (host.Host, *dual.DH
 		if errSetupLibP2P != nil {
 			return
 		}
-
-		globalConnectionManager = NewConnectionManager(globalHost)
 
 		globalGossipSub, errSetupLibP2P = pubsub.NewGossipSub(context.Background(), globalHost)
 		if err != nil {

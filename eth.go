@@ -50,15 +50,6 @@ func (e *EthSmartContract) GetEthereumClient() *contracts.Dtelecom {
 	return e.client
 }
 
-func (e *EthSmartContract) PublicKeyByAddress(address string) (string, error) {
-	e.logger.Debug("call method PublicKeyByAddress")
-	client, err := e.client.ClientByAddress(nil, common.HexToAddress(address))
-	if err != nil {
-		return "", errors.Wrap(err, "try get client by address")
-	}
-	return client.Key, nil
-}
-
 func (e *EthSmartContract) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
 	e.logger.Debug("call method GetBoostrapNodes")
 	all, err := e.client.GetAllNode(nil)

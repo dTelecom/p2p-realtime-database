@@ -53,16 +53,14 @@ func main() {
 	defer logger.Sync()
 
 	cfg := p2p_database.EnvConfig
-	cfg.DatabaseName = "global"
+	cfg.DatabaseName = "livekit_global"
 	cfg.WalletPrivateKey = *ethPrivateKey
 
-	var additionalDatabases = map[string]*p2p_database.DB{}
 	var err error
 	db, err = p2p_database.Connect(ctx, cfg, logger)
 	if err != nil {
 		panic(err)
 	}
-	additionalDatabases["global"] = db
 
 	h := db.GetHost()
 	fmt.Printf("Peer id %s\n", h.ID().String())
@@ -70,7 +68,6 @@ func main() {
 	fmt.Printf("> ")
 	scanner := bufio.NewScanner(os.Stdin)
 
-l:
 	for scanner.Scan() {
 		text := scanner.Text()
 		fields := strings.Fields(text)
@@ -80,29 +77,6 @@ l:
 		}
 
 		switch fields[0] {
-		case "connect":
-			_, alreadyExists := additionalDatabases[fields[1]]
-			if !alreadyExists {
-				cfg := p2p_database.EnvConfig
-				cfg.DatabaseName = fields[1]
-				cfg.WalletPrivateKey = *ethPrivateKey
-				additionalDatabases[fields[1]], err = p2p_database.Connect(ctx, cfg, logger)
-				if err != nil {
-					fmt.Printf("error connecting %s\n", err)
-				}
-			}
-			db = additionalDatabases[fields[1]]
-		case "disconnect":
-			_, alreadyExists := additionalDatabases[db.Name]
-			if !alreadyExists {
-				fmt.Printf("db not found")
-				return
-			}
-			err = db.Disconnect(context.Background())
-			if err != nil {
-				fmt.Printf("disconnect error: %v", err)
-			}
-			delete(additionalDatabases, db.Name)
 		case "subscribe":
 			err = db.Subscribe(ctx, fields[1], func(event p2p_database.Event) {
 				fmt.Printf("Got subscription event %v", event)
@@ -118,84 +92,6 @@ l:
 		case "peers":
 			for _, p := range connectedPeers(db.GetHost()) {
 				fmt.Printf("Peer [%s] %s\r\n", p.ID, p.Addrs[0].String())
-			}
-		case "debug":
-			switch fields[1] {
-			case "on":
-				level := "debug"
-				if len(fields) > 2 {
-					level = fields[2]
-				}
-				logging.SetLogLevel("*", level)
-			case "off":
-				logging.SetLogLevel("*", "error")
-			}
-		case "exit", "quit":
-			break l
-		case "list":
-			keys, err := db.List(ctx)
-			if err != nil {
-				fmt.Printf("error list keys %s\n", err)
-			} else {
-				fmt.Printf("Found %d keys\n", len(keys))
-				for _, k := range keys {
-					fmt.Println(k)
-				}
-			}
-		case "del":
-			if len(fields) < 2 {
-				fmt.Println("del <key>")
-				fmt.Println("> ")
-				continue
-			}
-			err := db.Remove(ctx, fields[1])
-			if err != nil {
-				fmt.Printf("error remove key %s\n", err)
-			} else {
-				fmt.Println("Successfully remove key")
-			}
-		case "get":
-			if len(fields) < 2 {
-				fmt.Println("get <key>")
-				fmt.Println("> ")
-				continue
-			}
-			val, err := db.Get(ctx, fields[1])
-			if err != nil {
-				fmt.Printf("error get key %s %s\n", fields[1], err)
-			} else {
-				fmt.Printf("[db %s] [%s] -> %s\n", db.String(), fields[1], string(val))
-			}
-		case "set":
-			if len(fields) < 3 {
-				fmt.Println("set <key> <val>")
-				fmt.Println("> ")
-				continue
-			}
-			err := db.Set(ctx, fields[1], fields[2])
-			if err != nil {
-				fmt.Printf("error set key %s %s\n", fields[1], err)
-			} else {
-				fmt.Printf("key %s successfully set\n", fields[1])
-			}
-		case "ttl":
-			if len(fields) < 3 {
-				fmt.Println("ttl <key> <duration>")
-				fmt.Println("> ")
-				continue
-			}
-			duration, err := time.ParseDuration(fields[2])
-			if err != nil {
-				fmt.Printf("error parse duration: %s\n", err)
-				fmt.Println("> ")
-				continue
-			}
-			err = db.TTL(ctx, fields[1], duration)
-			if err != nil {
-				fmt.Printf("error ttl command: %s\n", err)
-				continue
-			} else {
-				fmt.Println("success set ttl")
 			}
 		}
 		fmt.Printf("> ")
