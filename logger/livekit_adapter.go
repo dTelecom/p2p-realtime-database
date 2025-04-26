@@ -12,13 +12,6 @@ type LivekitLogger interface {
 	Infow(msg string, keysAndValues ...interface{})
 	Warnw(msg string, err error, keysAndValues ...interface{})
 	Errorw(msg string, err error, keysAndValues ...interface{})
-	// The remaining methods are not used by our adapter but are part of LiveKit's interface
-	// Use interface{} for return types to accommodate any logger implementation
-	WithValues(keysAndValues ...interface{}) interface{}
-	WithName(name string) interface{}
-	WithCallDepth(depth int) interface{}
-	WithItemSampler() interface{}
-	WithoutSampler() interface{}
 }
 
 // LivekitLoggerAdapter adapts a LiveKit logger to our internal logger interface
