@@ -32,6 +32,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mr-tron/base58"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ed25519"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -535,8 +536,17 @@ func makeHost(ctx context.Context, config Config, port int, logger common.Logger
 		return nil, nil, errors.New("invalid solana private key length")
 	}
 
+	// Convert Solana private key to Ed25519 format expected by libp2p
+	// Ed25519 private key needs to be 64 bytes: 32 bytes private key + 32 bytes public key
+	// Generate the public key from the private key
+	privateKey := ed25519.NewKeyFromSeed(privKeyBytes)
+
+	// Create a complete Ed25519 key (64 bytes: private + public)
+	edPrivKey := make([]byte, 64)
+	copy(edPrivKey, privateKey)
+
 	// Unmarshal as Ed25519 private key
-	priv, err := crypto.UnmarshalEd25519PrivateKey(privKeyBytes)
+	priv, err := crypto.UnmarshalEd25519PrivateKey(edPrivKey)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "unmarshal Ed25519 private key")
 	}
