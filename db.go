@@ -24,6 +24,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
+	"github.com/dTelecom/p2p-realtime-database/internal/common"
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	crdt "github.com/ipfs/go-ds-crdt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -102,13 +103,13 @@ type DB struct {
 	ready             bool
 	readyDatabaseLock sync.Mutex
 	disconnectOnce    sync.Once
-	logger            *logging.ZapEventLogger
+	logger            common.Logger
 }
 
 func Connect(
 	ctx context.Context,
 	config Config,
-	logger *logging.ZapEventLogger,
+	logger common.Logger,
 	opts ...dht.Option,
 ) (*DB, error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -162,7 +163,7 @@ func Connect(
 	}
 
 	crtdOpts := crdt.DefaultOptions()
-	crtdOpts.Logger = logger
+	crtdOpts.Logger = common.NewStandardLoggerAdapter(logger)
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.RebroadcastInterval = time.Second
 
@@ -517,7 +518,10 @@ func (db *DB) startDiscovery(ctx context.Context) {
 	}()
 }
 
-func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapEventLogger) (host.Host, *dual.DHT, error) {
+func makeHost(ctx context.Context, config Config, port int, logger common.Logger) (host.Host, *dual.DHT, error) {
+	// We'll need this for GetBoostrap and NewSolanaConnectionGater
+	zapLogger := logging.Logger("p2p-host")
+
 	// Decode the Solana private key from base58
 	privKeyBytes, err := base58.Decode(config.WalletPrivateKey)
 	if err != nil {
@@ -546,7 +550,7 @@ func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapE
 	onceInitHostP2P.Do(func() {
 		opts := ipfslite.Libp2pOptionsExtra
 		opts = append(opts, libp2p.ConnectionGater(
-			NewSolanaConnectionGater(logger),
+			NewSolanaConnectionGater(zapLogger),
 		))
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
@@ -566,7 +570,7 @@ func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapE
 			return
 		}
 
-		globalBootstrapNodes, errSetupLibP2P = GetBoostrapNodes(logger)
+		globalBootstrapNodes, errSetupLibP2P = GetBoostrapNodes(zapLogger)
 		if errSetupLibP2P != nil {
 			return
 		}

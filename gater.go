@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/dTelecom/p2p-realtime-database/internal/common"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -210,4 +211,18 @@ func getPeerIdFromPublicKey(pk string) (string, error) {
 	}
 
 	return id.String(), nil
+}
+
+// NewSolanaConnectionGaterWithCommonLogger creates a new SolanaConnectionGater with a common.Logger
+func NewSolanaConnectionGaterWithCommonLogger(logger common.Logger) *SolanaConnectionGater {
+	// Use the standard IPFS logger for internal gater operations
+	zapLogger := logging.Logger("solana-gater")
+	return NewSolanaConnectionGater(zapLogger)
+}
+
+// GetBoostrapNodesWithCommonLogger gets bootstrap nodes with a common.Logger
+func GetBoostrapNodesWithCommonLogger(logger common.Logger) ([]peer.AddrInfo, error) {
+	// Use the standard IPFS logger for internal bootstrap operations
+	zapLogger := logging.Logger("bootstrap")
+	return GetBoostrapNodes(zapLogger)
 }

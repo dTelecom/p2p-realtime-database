@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	logging "github.com/ipfs/go-log/v2"
-
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	"github.com/dTelecom/p2p-realtime-database/internal/common"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -22,9 +22,9 @@ import (
 
 var (
 	solanaPrivateKey = flag.String("pk", "", "solana wallet private key")
-	loggingDebug   = flag.Bool("vvv", false, "debug mode")
-	loggingInfo    = flag.Bool("vv", false, "info mode")
-	loggingWarning = flag.Bool("v", false, "warning mode")
+	loggingDebug     = flag.Bool("vvv", false, "debug mode")
+	loggingInfo      = flag.Bool("vv", false, "info mode")
+	loggingWarning   = flag.Bool("v", false, "warning mode")
 
 	db *p2p_database.DB
 )
@@ -48,8 +48,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer cancel()
 
-	logger := logging.Logger("db")
-	defer logger.Sync()
+	logger := new(common.ConsoleLogger)
 
 	cfg := p2p_database.EnvConfig
 	cfg.DatabaseName = "livekit_global"
