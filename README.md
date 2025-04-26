@@ -22,28 +22,36 @@ go build examples/main.go
 
 # Using with Custom Loggers
 
-The library uses its own Logger interface defined in the `internal/common` package. If you have your own logger, there are a few ways to use it with this library:
+The library uses its own Logger interface but provides utilities to adapt your own logger:
 
-1. If your logger implements all the required methods, you can use it directly with `Connect`.
-
-2. If your logger has a simpler interface (with just Debug, Info, Warn, Error methods), you can use the adapter:
+1. For loggers with Debug, Info, Warn, and Error methods, use the adapter:
 
 ```go
 import (
     p2p_database "github.com/dTelecom/p2p-realtime-database"
-    "github.com/dTelecom/p2p-realtime-database/internal/common"
 )
 
 // Adapt your simple logger to the required interface
-adaptedLogger := common.NewLoggerAdapter(yourLogger)
+adaptedLogger := p2p_database.NewLoggerAdapter(yourLogger)
 
 // Use the adapted logger with Connect
 db, err := p2p_database.Connect(ctx, config, adaptedLogger)
 ```
 
-3. You can also use the console logger included in the library:
+2. To use the built-in console logger:
 
 ```go
-logger := new(common.ConsoleLogger)
+logger := p2p_database.NewConsoleLogger()
 db, err := p2p_database.Connect(ctx, config, logger)
+```
+
+The SimpleLogger interface required by NewLoggerAdapter is:
+
+```go
+type SimpleLogger interface {
+    Debug(args ...interface{})
+    Info(args ...interface{})
+    Warn(args ...interface{})
+    Error(args ...interface{})
+}
 ```
