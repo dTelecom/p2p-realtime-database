@@ -21,8 +21,7 @@ import (
 )
 
 var (
-	ethPrivateKey = flag.String("pk", "", "ethereum wallet private key")
-
+	solanaPrivateKey = flag.String("pk", "", "solana wallet private key")
 	loggingDebug   = flag.Bool("vvv", false, "debug mode")
 	loggingInfo    = flag.Bool("vv", false, "info mode")
 	loggingWarning = flag.Bool("v", false, "warning mode")
@@ -34,7 +33,7 @@ func main() {
 	flag.Parse()
 
 	if len(os.Args) < 2 {
-		log.Fatalf("expected private key ethereum wallet as first argument: ./main")
+		log.Fatalf("expected solana wallet private key as first argument: ./main")
 	}
 
 	switch {
@@ -54,7 +53,7 @@ func main() {
 
 	cfg := p2p_database.EnvConfig
 	cfg.DatabaseName = "livekit_global"
-	cfg.WalletPrivateKey = *ethPrivateKey
+	cfg.WalletPrivateKey = *solanaPrivateKey
 
 	var err error
 	db, err = p2p_database.Connect(ctx, cfg, logger)

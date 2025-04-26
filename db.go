@@ -21,7 +21,6 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 
-	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
@@ -30,6 +29,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/mr-tron/base58"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -164,18 +164,6 @@ func Connect(
 	crtdOpts := crdt.DefaultOptions()
 	crtdOpts.Logger = logger
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
-	crtdOpts.PutHook = func(k datastore.Key, v []byte) {
-		fmt.Printf("[%s] Added: [%s] -> %s\n", time.Now().Format(time.RFC3339), k, string(v))
-		if config.NewKeyCallback != nil {
-			config.NewKeyCallback(k.String())
-		}
-	}
-	crtdOpts.DeleteHook = func(k datastore.Key) {
-		fmt.Printf("[%s] Removed: [%s]\n", time.Now().Format(time.RFC3339), k)
-		if config.RemoveKeyCallback != nil {
-			config.RemoveKeyCallback(k.String())
-		}
-	}
 	crtdOpts.RebroadcastInterval = time.Second
 
 	doneBootstrappingIPFS, err := makeIPFS(ctx, ds, h)
@@ -530,20 +518,23 @@ func (db *DB) startDiscovery(ctx context.Context) {
 }
 
 func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapEventLogger) (host.Host, *dual.DHT, error) {
-	ethSmartContract, err := NewEthSmartContract(config, logger)
+	// Decode the Solana private key from base58
+	privKeyBytes, err := base58.Decode(config.WalletPrivateKey)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "create ethereum smart contract")
+		return nil, nil, errors.Wrap(err, "decode solana private key from base58")
 	}
 
-	prvKey, err := eth_crypto.HexToECDSA(config.WalletPrivateKey)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "hex to ecdsa eth private key")
+	// If it's a full keypair (64 bytes), extract just the private key part (first 32 bytes)
+	if len(privKeyBytes) == 64 {
+		privKeyBytes = privKeyBytes[:32]
+	} else if len(privKeyBytes) != 32 {
+		return nil, nil, errors.New("invalid solana private key length")
 	}
 
-	privKeyBytes := eth_crypto.FromECDSA(prvKey)
-	priv, err := crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
+	// Unmarshal as Ed25519 private key
+	priv, err := crypto.UnmarshalEd25519PrivateKey(privKeyBytes)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "UnmarshalSecp256k1PrivateKey from eth private key")
+		return nil, nil, errors.Wrap(err, "unmarshal Ed25519 private key")
 	}
 
 	sourceMultiAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
@@ -555,7 +546,7 @@ func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapE
 	onceInitHostP2P.Do(func() {
 		opts := ipfslite.Libp2pOptionsExtra
 		opts = append(opts, libp2p.ConnectionGater(
-			NewEthConnectionGater(ethSmartContract, logger),
+			NewSolanaConnectionGater(logger),
 		))
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
@@ -575,7 +566,7 @@ func makeHost(ctx context.Context, config Config, port int, logger *logging.ZapE
 			return
 		}
 
-		globalBootstrapNodes, errSetupLibP2P = ethSmartContract.GetBoostrapNodes()
+		globalBootstrapNodes, errSetupLibP2P = GetBoostrapNodes(logger)
 		if errSetupLibP2P != nil {
 			return
 		}
