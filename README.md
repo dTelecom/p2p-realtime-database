@@ -80,10 +80,10 @@ type LivekitLogger interface {
     Warnw(msg string, err error, keysAndValues ...interface{})
     Errorw(msg string, err error, keysAndValues ...interface{})
     // Additional methods not used by the adapter
-    WithValues(keysAndValues ...interface{}) LivekitLogger
-    WithName(name string) LivekitLogger
-    WithCallDepth(depth int) LivekitLogger
-    WithItemSampler() LivekitLogger
-    WithoutSampler() LivekitLogger
+    WithValues(keysAndValues ...interface{}) interface{}
+    WithName(name string) interface{}
+    WithCallDepth(depth int) interface{}
+    WithItemSampler() interface{}
+    WithoutSampler() interface{}
 }
 ```
