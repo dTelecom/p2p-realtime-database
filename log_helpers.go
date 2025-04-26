@@ -11,6 +11,12 @@ func NewLoggerAdapter(simpleLogger logger.SimpleLogger) common.Logger {
 	return logger.NewLoggerAdapter(simpleLogger)
 }
 
+// NewLivekitLoggerAdapter creates a new adapter specifically for LiveKit loggers.
+// This adapter works with loggers that have the Debugw, Infow, Warnw, and Errorw methods.
+func NewLivekitLoggerAdapter(livekitLogger logger.LivekitLogger) common.Logger {
+	return logger.NewLivekitLoggerAdapter(livekitLogger)
+}
+
 // NewConsoleLogger creates a new simple console logger that can be used with Connect.
 func NewConsoleLogger() common.Logger {
 	return new(common.ConsoleLogger)

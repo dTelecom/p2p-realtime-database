@@ -38,7 +38,22 @@ adaptedLogger := p2p_database.NewLoggerAdapter(yourLogger)
 db, err := p2p_database.Connect(ctx, config, adaptedLogger)
 ```
 
-2. To use the built-in console logger:
+2. For LiveKit loggers with Debugw, Infow, Warnw, and Errorw methods:
+
+```go
+import (
+    p2p_database "github.com/dTelecom/p2p-realtime-database"
+)
+
+// Adapt a LiveKit-style logger
+livekitLogger := logger.GetLogger()
+adaptedLogger := p2p_database.NewLivekitLoggerAdapter(livekitLogger)
+
+// Use the adapted logger with Connect
+db, err := p2p_database.Connect(ctx, config, adaptedLogger)
+```
+
+3. To use the built-in console logger:
 
 ```go
 logger := p2p_database.NewConsoleLogger()
@@ -53,5 +68,22 @@ type SimpleLogger interface {
     Info(args ...interface{})
     Warn(args ...interface{})
     Error(args ...interface{})
+}
+```
+
+The LivekitLogger interface required by NewLivekitLoggerAdapter is:
+
+```go
+type LivekitLogger interface {
+    Debugw(msg string, keysAndValues ...interface{})
+    Infow(msg string, keysAndValues ...interface{})
+    Warnw(msg string, err error, keysAndValues ...interface{})
+    Errorw(msg string, err error, keysAndValues ...interface{})
+    // Additional methods not used by the adapter
+    WithValues(keysAndValues ...interface{}) LivekitLogger
+    WithName(name string) LivekitLogger
+    WithCallDepth(depth int) LivekitLogger
+    WithItemSampler() LivekitLogger
+    WithoutSampler() LivekitLogger
 }
 ```
