@@ -577,8 +577,34 @@ func makeHost(ctx context.Context, config Config, port int, logger common.Logger
 			return
 		}
 
-		globalBootstrapNodes, errSetupLibP2P = gater.GetBoostrapNodes()
-		if errSetupLibP2P != nil {
+		// Try to get bootstrap nodes up to 10 times if we get fewer than 3 nodes
+		var retryCount int
+		maxRetries := 10
+		minNodes := 3
+
+		for retryCount < maxRetries {
+			globalBootstrapNodes, errSetupLibP2P = gater.GetBoostrapNodes()
+			if errSetupLibP2P != nil {
+				return
+			}
+
+			if len(globalBootstrapNodes) >= minNodes {
+				// We have enough bootstrap nodes, break out of the loop
+				break
+			}
+
+			logger.Infof("Received only %d bootstrap nodes, waiting 1 second and retrying (%d/%d)",
+				len(globalBootstrapNodes), retryCount+1, maxRetries)
+
+			// Sleep for 1 second before retrying
+			time.Sleep(1 * time.Second)
+			retryCount++
+		}
+
+		// If we still have fewer than minNodes after all retries, return an error
+		if len(globalBootstrapNodes) < minNodes {
+			errSetupLibP2P = fmt.Errorf("failed to get at least %d bootstrap nodes after %d attempts, only got %d nodes",
+				minNodes, maxRetries, len(globalBootstrapNodes))
 			return
 		}
 	})
