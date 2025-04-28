@@ -21,7 +21,6 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 
 	"github.com/dTelecom/p2p-realtime-database/internal/common"
@@ -164,7 +163,6 @@ func Connect(
 	}
 
 	crtdOpts := crdt.DefaultOptions()
-	crtdOpts.Logger = common.NewStandardLoggerAdapter(logger)
 	crtdOpts.RebroadcastInterval = RebroadcastingInterval
 	crtdOpts.RebroadcastInterval = time.Second
 
@@ -520,8 +518,6 @@ func (db *DB) startDiscovery(ctx context.Context) {
 }
 
 func makeHost(ctx context.Context, config Config, port int, logger common.Logger) (host.Host, *dual.DHT, error) {
-	// We'll need this for GetBoostrap and NewSolanaConnectionGater
-	zapLogger := logging.Logger("p2p-host")
 
 	// Decode the Solana private key from base58
 	privKeyBytes, err := base58.Decode(config.WalletPrivateKey)
@@ -559,8 +555,9 @@ func makeHost(ctx context.Context, config Config, port int, logger common.Logger
 	var errSetupLibP2P error
 	onceInitHostP2P.Do(func() {
 		opts := ipfslite.Libp2pOptionsExtra
+		gater := NewSolanaConnectionGater(logger, config)
 		opts = append(opts, libp2p.ConnectionGater(
-			NewSolanaConnectionGater(zapLogger),
+			gater,
 		))
 
 		globalHost, globalDHT, errSetupLibP2P = ipfslite.SetupLibp2p(
@@ -580,7 +577,7 @@ func makeHost(ctx context.Context, config Config, port int, logger common.Logger
 			return
 		}
 
-		globalBootstrapNodes, errSetupLibP2P = GetBoostrapNodes(zapLogger)
+		globalBootstrapNodes, errSetupLibP2P = gater.GetBoostrapNodes()
 		if errSetupLibP2P != nil {
 			return
 		}

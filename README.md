@@ -24,21 +24,8 @@ go build examples/main.go
 
 The library uses its own Logger interface but provides utilities to adapt your own logger:
 
-1. For loggers with Debug, Info, Warn, and Error methods, use the adapter:
 
-```go
-import (
-    p2p_database "github.com/dTelecom/p2p-realtime-database"
-)
-
-// Adapt your simple logger to the required interface
-adaptedLogger := p2p_database.NewLoggerAdapter(yourLogger)
-
-// Use the adapted logger with Connect
-db, err := p2p_database.Connect(ctx, config, adaptedLogger)
-```
-
-2. For LiveKit loggers with Debugw, Infow, Warnw, and Errorw methods:
+For LiveKit loggers with Debugw, Infow, Warnw, and Errorw methods:
 
 ```go
 import (
@@ -58,17 +45,6 @@ db, err := p2p_database.Connect(ctx, config, adaptedLogger)
 ```go
 logger := p2p_database.NewConsoleLogger()
 db, err := p2p_database.Connect(ctx, config, logger)
-```
-
-The SimpleLogger interface required by NewLoggerAdapter is:
-
-```go
-type SimpleLogger interface {
-    Debug(args ...interface{})
-    Info(args ...interface{})
-    Warn(args ...interface{})
-    Error(args ...interface{})
-}
 ```
 
 The LivekitLogger interface required by NewLivekitLoggerAdapter is:

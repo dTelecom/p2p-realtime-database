@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/dTelecom/p2p-realtime-database/internal/common"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -17,12 +16,14 @@ import (
 
 type SolanaConnectionGater struct {
 	cache  sync.Map
-	logger *logging.ZapEventLogger
+	logger common.Logger
+	cfg    Config
 }
 
-func NewSolanaConnectionGater(logger *logging.ZapEventLogger) *SolanaConnectionGater {
+func NewSolanaConnectionGater(logger common.Logger, cfg Config) *SolanaConnectionGater {
 	g := &SolanaConnectionGater{
 		logger: logger,
+		cfg:    cfg,
 	}
 	return g
 }
@@ -48,7 +49,7 @@ func (e *SolanaConnectionGater) InterceptUpgraded(conn network.Conn) (allow bool
 }
 
 func (e *SolanaConnectionGater) checkPeerId(p peer.ID, method string) bool {
-	if EnvConfig.DisableGater {
+	if e.cfg.DisableGater {
 		return true
 	}
 
@@ -61,7 +62,7 @@ func (e *SolanaConnectionGater) checkPeerId(p peer.ID, method string) bool {
 	}
 
 	e.logger.Debugf("call method %s with %s", method, p)
-	r, err := ValidatePeer(p, e.logger)
+	r, err := e.validatePeer(p)
 
 	if err != nil {
 		e.logger.Warnf("try validate peer %s with method %s error %s", p, method, err)
@@ -79,33 +80,11 @@ func (e *SolanaConnectionGater) checkPeerId(p peer.ID, method string) bool {
 	return r
 }
 
-type Node struct {
-	Ip  string
-	Key string
-}
-
-func GetBoostrapNodes(logger *logging.ZapEventLogger) (res []peer.AddrInfo, err error) {
-	all := []Node{
-		{
-			Ip:  "34.175.243.9",
-			Key: "5g3euBKXqhdbfzkgbWQ7o1C6HQzbyr1noX6wiqfv2i3x",
-		},
-		{
-			Ip:  "35.205.115.103",
-			Key: "644PeDtMTPE1WFSaTC8BSjaNUN697frNRifciWSqiAZz",
-		},
-		{
-			Ip:  "34.165.46.203",
-			Key: "CiKDiqBjHs9jTaJANgreQkVgA6J4YhVbYx55tU7swKfk",
-		},
-	}
-
-	for _, n := range all {
-		ip := n.Ip
-
-		peerId, err := getPeerIdFromPublicKey(n.Key)
+func (e *SolanaConnectionGater) GetBoostrapNodes() (res []peer.AddrInfo, err error) {
+	for key, ip := range e.cfg.GetNodes() {
+		peerId, err := getPeerIdFromPublicKey(key)
 		if err != nil {
-			logger.Errorf(
+			e.logger.Errorf(
 				"get bootstrap peer id %s ip %s",
 				err,
 				ip,
@@ -113,11 +92,11 @@ func GetBoostrapNodes(logger *logging.ZapEventLogger) (res []peer.AddrInfo, err 
 			continue
 		}
 
-		logger.Infof("Boostrap peer from smart contract /ip4/%s/tcp/3500/p2p/%s\n", ip, peerId)
+		e.logger.Infof("Boostrap peer from smart contract /ip4/%s/tcp/3500/p2p/%s\n", ip, peerId)
 
 		addr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/3500/p2p/%s", ip, peerId))
 		if err != nil {
-			logger.Errorf(
+			e.logger.Errorf(
 				"error create multiaddr bootstrap node from contract %s ip %s",
 				err,
 				ip,
@@ -127,7 +106,7 @@ func GetBoostrapNodes(logger *logging.ZapEventLogger) (res []peer.AddrInfo, err 
 
 		peerInfo, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
-			logger.Errorf("error fetch addr info for %s ip %s", err, ip)
+			e.logger.Errorf("error fetch addr info for %s ip %s", err, ip)
 			continue
 		}
 
@@ -135,45 +114,23 @@ func GetBoostrapNodes(logger *logging.ZapEventLogger) (res []peer.AddrInfo, err 
 	}
 
 	if len(res) == 0 {
-		logger.Errorf("empty list bootstrap nodes from smart contract")
+		e.logger.Errorf("empty list bootstrap nodes from smart contract")
 	}
 
 	return res, nil
 }
 
-func ValidatePeer(p peer.ID, logger *logging.ZapEventLogger) (bool, error) {
+func (e *SolanaConnectionGater) validatePeer(p peer.ID) (bool, error) {
 	solanaAddr, err := getSolanaAddrFromPeer(p)
 	if err != nil {
 		return false, errors.Wrap(err, "get solana addr from peer")
 	}
 
-	// Here you would normally validate against a smart contract or other authority
-	// For now, we allow all valid Solana-derived peer IDs
-	logger.Debugf("Validating Solana peer with address %s", solanaAddr)
+	e.logger.Debugf("Validating Solana peer with address %s", solanaAddr)
 
-	all := []Node{
-		{
-			Ip:  "34.175.243.9",
-			Key: "5g3euBKXqhdbfzkgbWQ7o1C6HQzbyr1noX6wiqfv2i3x",
-		},
-		{
-			Ip:  "35.205.115.103",
-			Key: "644PeDtMTPE1WFSaTC8BSjaNUN697frNRifciWSqiAZz",
-		},
-		{
-			Ip:  "34.165.46.203",
-			Key: "CiKDiqBjHs9jTaJANgreQkVgA6J4YhVbYx55tU7swKfk",
-		},
-	}
-
-	for _, n := range all {
-		if n.Key == solanaAddr {
-			return true, nil
-		}
-	}
-
-	// Allow all peers for testing
-	return true, nil
+	nodes := e.cfg.GetNodes()
+	_, exists := nodes[solanaAddr]
+	return exists, nil
 }
 
 func getSolanaAddrFromPeer(p peer.ID) (string, error) {
@@ -211,18 +168,4 @@ func getPeerIdFromPublicKey(pk string) (string, error) {
 	}
 
 	return id.String(), nil
-}
-
-// NewSolanaConnectionGaterWithCommonLogger creates a new SolanaConnectionGater with a common.Logger
-func NewSolanaConnectionGaterWithCommonLogger(logger common.Logger) *SolanaConnectionGater {
-	// Use the standard IPFS logger for internal gater operations
-	zapLogger := logging.Logger("solana-gater")
-	return NewSolanaConnectionGater(zapLogger)
-}
-
-// GetBoostrapNodesWithCommonLogger gets bootstrap nodes with a common.Logger
-func GetBoostrapNodesWithCommonLogger(logger common.Logger) ([]peer.AddrInfo, error) {
-	// Use the standard IPFS logger for internal bootstrap operations
-	zapLogger := logging.Logger("bootstrap")
-	return GetBoostrapNodes(zapLogger)
 }
