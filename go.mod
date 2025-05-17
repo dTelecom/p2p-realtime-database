@@ -1,22 +1,21 @@
 module github.com/dTelecom/p2p-realtime-database
 
-go 1.23
+go 1.23.5
 
 toolchain go1.23.6
 
 require (
-	github.com/caarlos0/env/v7 v7.1.0
 	github.com/google/uuid v1.6.0
 	github.com/hsanjuan/ipfs-lite v1.8.2
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-crdt v0.6.2
-	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.37.0
 	github.com/libp2p/go-libp2p-kad-dht v0.28.0
 	github.com/libp2p/go-libp2p-pubsub v0.12.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multiaddr v0.13.0
 	github.com/pkg/errors v0.9.1
+	golang.org/x/crypto v0.28.0
 	golang.org/x/sync v0.8.0
 )
 
@@ -62,6 +61,7 @@ require (
 	github.com/ipfs/go-ipld-format v0.6.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.2.1 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
+	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
@@ -144,7 +144,6 @@ require (
 	go.uber.org/mock v0.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
